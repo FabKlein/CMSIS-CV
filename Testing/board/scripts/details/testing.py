@@ -1,4 +1,4 @@
-import numpy as np 
+import numpy as np
 
 ##
 ## Classes for describing tests
@@ -15,14 +15,14 @@ class Comparison:
 
   def add_error(self,err):
       self._errors += err + "\n";
-  
+
 
   def check(self,src,dst):
       return True
 
 # Assume the AlgoImage is containing an image
 # and not a numpy
-# 
+#
 def _same_img_type(self,src,dst):
     if (src.img.mode != dst.img.mode):
         self.add_error("Different image types")
@@ -49,7 +49,7 @@ def same_images(self,src,dst):
             return False
         if list(s.img.getdata()) != list(d.img.getdata()):
             self.add_error("Different image content")
-            return False 
+            return False
 
     return True
 
@@ -57,14 +57,14 @@ def same_images(self,src,dst):
 # on the Python side like:
 # How to generate reference for a given test
 # How to validate a test
-# 
+#
 
 class IdenticalTensor(Comparison):
     def __call__(self,ref,result):
         for s,d in zip(ref,result):
             if not np.array_equal(s.tensor,d.tensor):
                 self.add_error("Different tensors")
-                return False 
+                return False
         return(True)
 
 
@@ -85,7 +85,7 @@ class SimilarTensor(Comparison):
                 diff = np.abs(s.tensor-d.tensor)
                 errorVal = np.max(diff)
                 self.add_error(f"Different tensors. Max error = {errorVal}")
-                return False 
+                return False
         return(True)
 
 class SimilarTensorFixp(Comparison):
@@ -122,13 +122,13 @@ class SimilarTensorFixp(Comparison):
                tooBigPos = list(np.argwhere(tooBig))
                indices = list(set([tuple(x) for x in tooBigPos]))
 
-               allErrors = [diff[x] for x in indices] 
+               allErrors = [diff[x] for x in indices]
                nb_errors = len(allErrors)
                indices = indices[:MAXNB]
                allErrors = allErrors[:MAXNB]
 
-               ref = [st[x] for x in indices] 
-               result = [dt[x] for x in indices] 
+               ref = [st[x] for x in indices]
+               result = [dt[x] for x in indices]
 
                ref=ref[:MAXNB]
                result=result[:MAXNB]
@@ -138,5 +138,5 @@ class SimilarTensorFixp(Comparison):
                self.add_error(f"Results : {result}")
                self.add_error(f"Number of errors : {nb_errors}")
 
-               return False 
+               return False
         return(True)

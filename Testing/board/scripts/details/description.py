@@ -65,7 +65,7 @@ def rgb_crop_test(imgdim,funcid,left,top,right,bottom):
             "reference": CropRGB((left,right),(top,bottom)),
             "check" : SimilarTensorFixp(0)
            }
-           
+
 def linear_gaussian_test(imgid, imgdim, funcid=2, img_type="gray8"):
     return {"desc":f"Gauss {img_type} image {imgdim[0]}x{imgdim[1]}",
             "funcid": funcid,
@@ -96,4 +96,12 @@ def bgr8U3C_resize_to_rgb_test(imgdim,funcid,dst_w,dst_h):
             "useimg": [2],
             "reference": HimaxResizeBGR_8U3C_to_RGB24(dst_w,dst_h),
             "check" : SimilarTensorFixp(20)
+           }
+
+def gray8_histogr_test(imgid,imgdim,funcid,args):
+    return {"desc":f"Gray 8 histogram test {imgdim[0]}x{imgdim[1]}, funcid:{funcid} : args {args} ",
+            "funcid": funcid,
+            "useimg": [imgid],
+            "reference": Gray8Histogram(args),
+            "check" : SimilarTensorFixp()
            }

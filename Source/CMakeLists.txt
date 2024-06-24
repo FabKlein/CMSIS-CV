@@ -16,7 +16,7 @@ target_include_directories(CMSISCV PUBLIC "${ROOT}/Include")
 target_include_directories(CMSISCV PRIVATE "${ROOT}/PrivateInclude")
 
 target_sources(CMSISCV PRIVATE arm_cv_common.c
-    FeatureDetection/arm_cannysobel.c 
+    FeatureDetection/arm_cannysobel.c
     LinearFilters/arm_gaussian.c
     ColorTransforms/arm_yuv420_to_gray8.c
     ColorTransforms/arm_bgr_8U3C_to_gray8.c
@@ -30,6 +30,7 @@ target_sources(CMSISCV PRIVATE arm_cv_common.c
     ImageTransforms/arm_image_resize_gray8_f32.c
     ImageTransforms/arm_image_resize_common_f32.c
     ImageTransforms/arm_image_resize_bgr_8U3C_to_rgb24_f32.c
+    ImageAnalysis/arm_histogram_gray8.c
     )
 
 if (HOST)
@@ -59,7 +60,7 @@ if (MVEI OR MVEF OR HELIUM)
 endif()
 
 if (DISABLEFLOAT16)
-    target_compile_definitions(CMSISCV PRIVATE DISABLEFLOAT16) 
+    target_compile_definitions(CMSISCV PRIVATE DISABLEFLOAT16)
 endif()
 
 target_link_libraries(CMSISCV PUBLIC CMSISDSP)

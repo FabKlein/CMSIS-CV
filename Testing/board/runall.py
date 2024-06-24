@@ -1,16 +1,18 @@
 import argparse
 import pickle
 import sys
-import subprocess 
-import os 
+import subprocess
+import os
 import glob
-import sys 
+import sys
+import platform
+
 
 # Description of all configurations compiler / cores are defined
 # in this file
 from test_configs import *
 
-oldprint = print 
+oldprint = print
 
 from rich import print
 from rich.live import Live
@@ -35,6 +37,7 @@ parser.add_argument('--gen', action='store_true', help="Generate inputs and refe
 parser.add_argument('--results', action='store_true', help="Generate test result images")
 parser.add_argument('--dev', action='store_true', help="Kernel development mode")
 
+
 # In norun, the .dat is generated and the project build
 # but no AVH is run
 parser.add_argument('--norun', action='store_true', help="Don't run in dev mode")
@@ -48,7 +51,7 @@ args = parser.parse_args()
 
 
 
-DEBUG=False 
+DEBUG=False
 if args.d:
     DEBUG=True
 
@@ -94,8 +97,8 @@ class Result:
     @property
     def msg(self):
         return self._msg
-    
-    
+
+
 
 # Run a command and get error or result
 # For the test report we don't need the stderr
@@ -128,7 +131,7 @@ def run(*args,mustPrint=False,dumpStdErr=True,live=None):
 
 
 
-   
+
 # Configuration file for AVH core
 configFiles={
     "CS300":"VHT-Corstone-300.txt",
@@ -140,16 +143,17 @@ configFiles={
 # Windows executable
 # (At some point this script will also support
 # unix)
+
 avhExe={
-    "CS310":"VHT_Corstone_SSE-310.exe",
-    "CS300":"VHT_Corstone_SSE-300_Ethos-U55.exe",
-    "M55":"VHT_MPS2_Cortex-M55.exe",
-    "M33_DSP_FP":"VHT_MPS2_Cortex-M33.exe",
-    "M7DP":"VHT_MPS2_Cortex-M7.exe",
-    "M4FP":"VHT_MPS2_Cortex-M4.exe",
-    "M3":"VHT_MPS2_Cortex-M3.exe",
-    "M23":"VHT_MPS2_Cortex-M23.exe",
-    "M0plus":"VHT_MPS2_Cortex-M0plus.exe",
+    "CS310":"VHT_Corstone_SSE-310",
+    "CS300":"VHT_Corstone_SSE-300_Ethos-U55",
+    "M55":"VHT_MPS2_Cortex-M55",
+    "M33_DSP_FP":"VHT_MPS2_Cortex-M33",
+    "M7DP":"VHT_MPS2_Cortex-M7",
+    "M4FP":"VHT_MPS2_Cortex-M4",
+    "M3":"VHT_MPS2_Cortex-M3",
+    "M23":"VHT_MPS2_Cortex-M23",
+    "M0plus":"VHT_MPS2_Cortex-M0plus",
 }
 
 AVHROOT = args.avh
@@ -158,16 +162,21 @@ AVHROOT = args.avh
 def runAVH(live,build,core):
     axf="cprj/out/cmsiscv/%s/Release/cmsiscv.axf" % (build,)
     elf="cprj/out/cmsiscv/%s/Release/cmsiscv.elf" % (build,)
-    app = axf 
+    app = axf
     if os.path.exists(axf):
-        app = axf 
+        app = axf
     if os.path.exists(elf):
         app = elf
     config = os.path.join("fvp_configs",configFiles[core])
-    avh = os.path.join(AVHROOT,avhExe[core])
+
+    if platform.system() == 'Windows':
+        avh = os.path.join(AVHROOT,avhExe[core]+'.exe')
+    else:
+        avh = os.path.join(AVHROOT,avhExe[core])
+
     res=run(avh,"-f",config,app,live=live)
     return(res)
-   
+
 def clean_old_results():
     g = glob.glob("results/*.dat")
     for f in g:
@@ -181,7 +190,7 @@ HTMLHEADER="""<html>
 <title>CMSIS-CV Test summary</title>
 </header>
 <body>
-""" 
+"""
 
 HTMLFOOTER="""
 </body></html>
@@ -202,7 +211,7 @@ def gen_table(the_list):
 
     for i in the_list:
         table.add_row(*i)
-    return table 
+    return table
 
 if args.dev:
    args.results = True
@@ -217,7 +226,7 @@ if args.gen:
        print(f"Generate group {group_id}")
        clean_input_images(args,group_id)
        generate_input_images(args,group_id,testSuite)
-   
+
    printMessage("Generate reference images")
    # Generate all reference images
    for group_id,testSuite in enumerate(allSuites):
@@ -248,7 +257,7 @@ if not args.group is None:
 
 MAX_ROWS=4
 latest=[]
-with Live(gen_table([]), refresh_per_second=4) as live: 
+with Live(gen_table([]), refresh_per_second=4) as live:
 
     with open("summary.html","w") as f:
         print(HTMLHEADER,file=f)
@@ -277,8 +286,8 @@ with Live(gen_table([]), refresh_per_second=4) as live:
                 tableTarget = getTitle(live,"%s (%d/%d)" % (build,buildNb,maxNbBuilds))
                 buildFile="cmsiscv.Release+%s" % build
                 maxNb = len(allSuites)
-    
-    
+
+
                 for group_id,testSuite in enumerate(allSuites):
                     if (len(latest)>MAX_ROWS):
                         latest=latest[1:]
@@ -321,8 +330,8 @@ with Live(gen_table([]), refresh_per_second=4) as live:
                              latest[-1][-1]=msg
                              live.update(renderable=gen_table(latest))
                              res=run("cbuild","-O" ,"cprj",'cmsiscv.csolution.yml',"--toolchain" ,c,"-c",buildFile,live=live)
-                       
-                       
+
+
                           if res.error:
                               latest[-1][-1]="[red]Error cbuild"
                               live.update(renderable=gen_table(latest))
@@ -356,8 +365,8 @@ with Live(gen_table([]), refresh_per_second=4) as live:
                        # Status table only contain failure
                        latest=latest[:-1]
                        live.update(renderable=gen_table(latest))
-                       
-                   
+
+
         print(HTMLFOOTER,file=f)
 
 # Refresh cursor

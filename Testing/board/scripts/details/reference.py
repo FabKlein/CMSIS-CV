@@ -123,8 +123,8 @@ class YUV420ToRGB:
 
 class CropGray8:
     def __init__(self,width=None,height=None):
-        self._width = width # pair 
-        self._height = height # pair 
+        self._width = width # pair
+        self._height = height # pair
 
     def __call__(self,args,group_id,test_id,srcs):
         filtered = []
@@ -147,8 +147,8 @@ class CropGray8:
 
 class CropRGB:
     def __init__(self,width=None,height=None):
-        self._width = width # pair 
-        self._height = height # pair 
+        self._width = width # pair
+        self._height = height # pair
 
     def __call__(self,args,group_id,test_id,srcs):
         filtered = []
@@ -175,7 +175,7 @@ class CropRGB:
 def _Himax_resize(input,output_w,output_h):
     tmp = np.zeros((2,output_w),dtype=np.uint8)
     result = np.zeros((output_h,output_w),dtype=np.uint8)
-    input_h,input_w = input.shape 
+    input_h,input_w = input.shape
     w_scale = (input_w - 1) / (output_w - 1)
     h_scale = (input_h - 1) / (output_h - 1)
 
@@ -214,8 +214,8 @@ def _Himax_resize(input,output_w,output_h):
 # Resizing using Himax algorithm
 class HimaxResizeGray8:
     def __init__(self,w,h):
-        self._dst_width = w  
-        self._dst_height = h  
+        self._dst_width = w
+        self._dst_height = h
 
     def __call__(self,args,group_id,test_id,srcs):
         filtered = []
@@ -238,8 +238,8 @@ class HimaxResizeGray8:
 
 class ResizeGray8:
     def __init__(self,w,h):
-        self._dst_width = w  
-        self._dst_height = h  
+        self._dst_width = w
+        self._dst_height = h
 
     def __call__(self,args,group_id,test_id,srcs):
         filtered = []
@@ -262,8 +262,8 @@ class ResizeGray8:
 
 class HimaxResizeBGR_8U3C:
     def __init__(self,w,h):
-        self._dst_width = w  
-        self._dst_height = h  
+        self._dst_width = w
+        self._dst_height = h
 
     def __call__(self,args,group_id,test_id,srcs):
         filtered = []
@@ -288,8 +288,8 @@ class HimaxResizeBGR_8U3C:
 
 class ResizeBGR_8U3C:
     def __init__(self,w,h):
-        self._dst_width = w  
-        self._dst_height = h  
+        self._dst_width = w
+        self._dst_height = h
 
     def __call__(self,args,group_id,test_id,srcs):
         filtered = []
@@ -314,8 +314,8 @@ class ResizeBGR_8U3C:
 
 class HimaxResizeBGR_8U3C_to_RGB24:
     def __init__(self,w,h):
-        self._dst_width = w  
-        self._dst_height = h  
+        self._dst_width = w
+        self._dst_height = h
 
     def __call__(self,args,group_id,test_id,srcs):
         filtered = []
@@ -342,7 +342,7 @@ class HimaxResizeBGR_8U3C_to_RGB24:
 
     def nb_references(self,srcs):
         return len(srcs)
-    
+
 class GaussianFilter:
     def __call__(self,args,group_id,test_id,srcs):
         filtered = []
@@ -354,7 +354,7 @@ class GaussianFilter:
             blur = cv.filter2D(i.tensor, -1, kernel,cv.BORDER_REPLICATE)
             # Pack the image in an AlgoImage and add it to the reference patterns
             # If we get the blur as it is, it will be recorded as an .npy file
-            # It would be simpler with a gray8 as tiff image 
+            # It would be simpler with a gray8 as tiff image
             # So we need to convert back to Pillow
             pil = PIL.Image.fromarray(blur)
             filtered.append(AlgoImage(pil))
@@ -370,3 +370,73 @@ class GaussianFilter:
 
     def nb_references(self,srcs):
         return len(srcs)
+
+class Gray8Histogram:
+    def __init__(self,args):
+         self.args = args
+         histsize, histRange, accumulate, uniform, useMask = args
+         self.histSize   = histsize
+         self.histRange = histRange
+         self.accumulate = accumulate
+         self.uniform = uniform
+         self.useMask = useMask
+
+
+    def __call__(self,args,group_id,test_id,srcs):
+        filtered = []
+        for i in srcs:
+
+            # the number of bins
+            histSize = self.histSize
+
+            # histogram range / non-uniform edges
+            histRange = self.histRange # the upper boundary is exclusive
+            uniformflg = self.uniform
+
+            ## accumulation paramters
+            accumulate = self.accumulate
+            accumulated_hist = np.zeros((256, 1), dtype=np.float32)
+            if accumulate:
+                # add extra 1 as init state
+                accumulated_hist = np.ones((256, 1), dtype=np.float32)
+
+            histRange = list(histRange)
+
+            ## Compute the histograms
+            mask = None
+            if self.useMask:
+                mask = np.array(i.tensor & 1, dtype=np.uint8)
+                mask = mask.flatten()
+
+
+            if uniformflg:
+                b_hist = cv.calcHist([i.tensor.flatten()], [0], mask, [histSize], histRange,
+                    accumulate=accumulate, hist=accumulated_hist)
+            else:
+                # use Numpy Histogram as cv2 does not support non-uniform repartition
+
+                # numpy includes the rightmost edge
+                # Decrement the last element
+                histRange[-1] -= 1
+
+                input = i.tensor.flatten()
+
+                if self.useMask:
+                    # filter input based on LSB
+                    input = input[mask == 1]
+
+                b_hist1, bins = np.histogram([input], bins = histRange)
+                b_hist = b_hist1.reshape(-1, 1)
+
+            filtered.append(AlgoImage(b_hist.astype(np.uint16)))
+
+
+        # Record the filtered images
+        for image_id,img in enumerate(filtered):
+            record_reference_img(args,group_id,test_id,image_id,img)
+
+    def nb_references(self,srcs):
+        return len(srcs)
+
+
+

@@ -50,7 +50,7 @@ typedef struct _arm_cv_image {
  * @param   width     image width in pixels
  * @param   height    image height in pixels
  * @param   pData     pointer to the array containing the data for the pixels
- * @return 
+ * @return
  *
  */
 typedef struct _arm_cv_image_gray8 {
@@ -64,7 +64,7 @@ typedef struct _arm_cv_image_gray8 {
  * @param   width     image width in pixels
  * @param   height    image height in pixels
  * @param   pData     pointer to the array containing the data for the pixels
- * @return 
+ * @return
  *
  */
 typedef struct _arm_cv_image_gray16 {
@@ -78,7 +78,7 @@ typedef struct _arm_cv_image_gray16 {
  * @param   width     image width in pixels
  * @param   height    image height in pixels
  * @param   pData     pointer to the array containing the data for the pixels
- * @return 
+ * @return
  *
  */
 typedef struct _arm_cv_image_rgb24 {
@@ -92,7 +92,7 @@ typedef struct _arm_cv_image_rgb24 {
  * @param   width     image width in pixels
  * @param   height    image height in pixels
  * @param   pData     pointer to the array containing the data for the pixels
- * @return 
+ * @return
  *
  */
 typedef struct _arm_cv_image_rgba {
@@ -106,16 +106,16 @@ typedef struct _arm_cv_image_rgba {
  * @param   width     image width in pixels
  * @param   height    image height in pixels
  * @param   pData     pointer to the array containing the data for the pixels
- * @return 
- * 
+ * @return
+ *
  * @par The image is unpacked
  *      There are 3 planes : Y, U and V
- *      width and height are the dimensions of the image and not of the 
+ *      width and height are the dimensions of the image and not of the
  *      tensor (different from OpenCV for instance)
  * @par Format details
  *      - YUV = YCbCr
  *      - ITU-R BT.601 full format.
- * @par Resulting output range is 
+ * @par Resulting output range is
  *      - Y=[16...235]
  *      - Cb (U) =[16...240]
  *      - Cr (V) =[16...240]
@@ -132,11 +132,11 @@ typedef struct _arm_cv_image_yuv420 {
  * @param   width     image width in pixels
  * @param   height    image height in pixels
  * @param   pData     pointer to the array containing the data for the pixels
- * @return 
- * 
+ * @return
+ *
  * @par The image is unpacked
  *      There are 3 planes : B,G,R
- *      width and height are the dimensions of the image and not of the 
+ *      width and height are the dimensions of the image and not of the
  *
  */
 typedef struct _arm_cv_image_bgr_8U3C {
@@ -150,7 +150,7 @@ typedef struct _arm_cv_image_bgr_8U3C {
  * @param   width     image width in pixels
  * @param   height    image height in pixels
  * @param   pData     pointer to the array containing the data for the pixels
- * @return 
+ * @return
  *
  */
 typedef struct _arm_cv_image_q15 {
@@ -163,7 +163,7 @@ typedef struct _arm_cv_image_q15 {
  * @brief   Gradient in q15
  * @param   x     first component of the gradient
  * @param   y     second component of the gradient
- * @return 
+ * @return
  *
  */
 typedef struct _arm_cv_gradient_q15 {
@@ -171,11 +171,11 @@ typedef struct _arm_cv_gradient_q15 {
   q15_t y;
 } arm_cv_gradient_q15_t;
 /**
- * @brief   Image of gradients in q15 
+ * @brief   Image of gradients in q15
  * @param   width     image width in pixels
  * @param   height    image height in pixels
  * @param   pData     pointeur to the array containing the data for the gradient
- * @return 
+ * @return
  *
  */
 typedef struct _arm_cv_image_grad_q15 {
@@ -185,6 +185,14 @@ typedef struct _arm_cv_image_grad_q15 {
 } arm_cv_image_gradient_q15_t;
 
 
+
+typedef enum
+{
+    ARM_CV_SUCCESS                 =  0,        /**< No error */
+    ARM_CV_ARGUMENT_ERROR          = -1,        /**< One or more arguments are incorrect */
+    ARM_CV_LENGTH_ERROR            = -2,        /**< Length of data buffer is incorrect */
+    ARM_CV_SIZE_MISMATCH           = -3,        /**< Size of matrices is not compatible with the operation */
+} arm_cv_status;
 
 #ifdef   __cplusplus
 }

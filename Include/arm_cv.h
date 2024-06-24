@@ -23,8 +23,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#ifndef ARM_CV_H_ 
-#define ARM_CV_H_ 
+#ifndef ARM_CV_H_
+#define ARM_CV_H_
 
 #include "arm_cv_types.h"
 
@@ -49,5 +49,9 @@
  */
 #include "cv/feature_detection.h"
 
+/**
+ * @defgroup imageAnalysis Image Analysis
+ */
+#include "cv/image_analysis.h"
 
-#endif 
+#endif
