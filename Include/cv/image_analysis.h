@@ -1,14 +1,13 @@
 /* ----------------------------------------------------------------------
  * Project:      CMSIS CV Library
- * Title:        image_transforms.h
- * Description:  Image transformations for CMSIS-CV
+ * Title:        image_analysis.h
+ * Description:  Image Analysis for CMSIS-CV
  *
  *
  * Target Processor: Cortex-M and Cortex-A cores
  * -------------------------------------------------------------------- */
 /*
  * Copyright (C) 2014 ARM Limited or its affiliates. All rights reserved.
- * Copyright (C) 2024 Himax Technologies, Inc. or its affiliates. All rights reserved.
  *
  * (Copyright details are available in each C source file for each function)
  *
@@ -52,6 +51,7 @@ typedef struct _arm_cv_hist_bounds_ctx {
  * @param[in]     pImageIn        The input image
  * @param[in]     nbBins          The histogram dimension
  * @param[in]     bounds          Structure describing histograms min/max and cache for non-uniform histograms
+ * @return        Scratch size array in bytes
  */
 
 extern uint16_t arm_histogram_gray8_get_scratch_size(const arm_cv_image_gray8_t * pImageIn,
@@ -79,14 +79,15 @@ extern void arm_histogram_set_nonuniform_bound(channel_uint8_t * sortedBoundarie
  * @param[in]     bounds          Structure describing histograms min/max and cache for non-uniform histograms
  * @param[in]     uniform         Flag indicating whether the histogram is uniform or not
  * @param[in]     accumulate      Accumulation flag. If set, the histogram is not cleared in the beginning when it is allocated.
- * @param[in]     scratch         Internal storage
+ * @param[in]     scratch         Internal storage, 32-bit aligned
+ * @return        error status
  */
 
 extern arm_cv_status arm_histogram_gray8(const arm_cv_image_gray8_t * pImageIn,
                                       const arm_cv_image_gray8_t * pMask, uint16_t * pHistogVal,
                                       uint16_t nbBins,
                                       const arm_cv_hist_bounds_ctx * bounds, uint32_t uniform,
-                                      uint32_t accumulate, channel_uint8_t * scratch);
+                                      uint32_t accumulate, uint32_t * scratch);
 
 
 

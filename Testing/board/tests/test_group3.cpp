@@ -103,7 +103,7 @@ static arm_cv_status test_gray8_histogr(const unsigned char *inputs,
 
 
     uint16_t        scratchSize = arm_histogram_gray8_get_scratch_size(&input, histSize, &ctx);
-    uint8_t        *scratch = (uint8_t *) malloc(scratchSize);
+    uint32_t        *scratch = (uint32_t *) malloc(scratchSize);
 
 
     if (useAccumulation) {
