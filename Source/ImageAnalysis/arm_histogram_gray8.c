@@ -32,39 +32,102 @@
 
 
 
-/* TODO : FORCE_SCALAR case ?*/
 
-#if defined(ARM_MATH_MVEI)
+static
+void arm_histogr_core_u8(const channel_uint8_t * pIn, uint16_t * pHistog, uint32_t size)
+{
 
+    for (uint32_t i = 0; i < size; i++)
+        pHistog[*pIn++] += 1;
+}
+
+static
+void arm_histogr_core_u8_mask(const channel_uint8_t * pIn, const channel_uint8_t * pMask,
+                              uint16_t * pHistog, uint32_t size)
+{
+    for (uint32_t i = 0; i < size; i++) {
+        channel_uint8_t in = *pIn++;
+        channel_uint8_t mask = *pMask++;
+
+        if (mask)
+            pHistog[in] += 1;
+    }
+}
+
+
+
+#if (defined(ARM_MATH_MVEI) && !defined(FORCE_SCALAR))
+
+
+/*
+ In the Helium implementation, the construction of histograms utilizes 4 sub-histograms to distribute indentical indices
+ evenly and prevent overlap.
+ 4 x 8-bit values are combined into a single 32-bit vector, which serves as a scatter/gather offset.
+ This is then expanded into offsets for the 4 adjacent sub-histograms, ensuring that identical values are considered.
+ For instance, if the input sequence includes values like [1, 1, 2, 2, …], a standard gather load, increment, scatter store process
+ would lead to data loss.
+ This happens because the results of the additions would be stored in the same location due to their non-uniqueness.
+
+ For better performance, it would have been possible to use 16-bit vector as well and 8 sub-histograms, which comes with
+ increased memory needs and 16-bit scatter/gather cost would offset the benefits
+
+ The scratch size required for holding the 4 sub-histogram is given by arm_histogram_gray8_get_scratch_size
+ */
 
 #define NB_SUB_HISTOGGRAMS 4
 
-static void arm_histogr_core_u8_mve(const channel_uint8_t * pSrc, uint16_t * pHistogVal,
-                                    uint16_t nbBins, uint16_t blockSize, uint32_t * scratch)
+__STATIC_FORCEINLINE
+    mve_pred16_t vset_predq_bounds_u32_p(uint32x4_t offset, uint32_t min, uint32_t max,
+                                         mve_pred16_t p)
 {
-    int32_t         loopCnt = blockSize;
-    uint16_t       *pHistoTmp = (uint16_t *) scratch;
+    p = vcmpcsq_m_n_u32(offset, min, p);
+    p = vcmphiq_m_u32(vdupq_n_u32(max), offset, p);
+    return p;
+}
 
-    /* clear sub-histograms */
-    loopCnt = nbBins * NB_SUB_HISTOGGRAMS;
-    do {
-        mve_pred16_t    p = vctp16q(loopCnt);
 
-        vstrhq_p_u16(pHistoTmp, vdupq_m_n_u16(vuninitializedq_u16(), 0, p), p);
 
-        pHistoTmp += 8;
-        loopCnt -= 8;
-    }
-    while (loopCnt > 0);
 
-    pHistoTmp = (uint16_t *) scratch;
-    /* each lane will be dispatched */
-    /* into differents sub-histograms */
+typedef void    (*_arm_histogr_split_fct) (const channel_uint8_t * pSrc,
+                                           const channel_uint8_t * pMask,
+                                           const channel_uint8_t * lut, uint16_t min, uint16_t max,
+                                           uint16_t nbBins, uint32_t invHistWidth, uint32_t size,
+                                           uint16_t * pHistoSplit);
+
+
+/*
+     different sun-histogram split methods:
+     - arm_subhistogr_split_basic           : split unbounded 8-bit data into [0-256[ buckets sub-histograms
+     - arm_subhistogr_split_basic_mask      : split unbounded 8-bit data after mask validation into [0-256[ buckets sub-histograms
+     - arm_subhistogr_split_non_uniform     : split bounded 8-bit data into non-uniform buckets sub-histograms
+     - arm_subhistogr_split_non_uniform_mask: split bounded 8-bit data after mask validation into non-uniform buckets sub-histograms
+     - arm_subhistogr_split_buckets         : split bounded 8-bit data into custom buckets sub-histograms
+     - arm_subhistogr_split_buckets         : split bounded 8-bit data after mask validation into custom buckets sub-histograms
+
+    mask variants are created to avoid slowing down non-maks variant because of mask pointer check
+  */
+
+
+static void arm_subhistogr_split_basic(const channel_uint8_t * pSrc,
+                                       const channel_uint8_t * pMask, const channel_uint8_t * lut,
+                                       uint16_t min, uint16_t max, uint16_t nbBins,
+                                       uint32_t invHistWidth, uint32_t size, uint16_t * pHistoSplit)
+{
+    (void) lut;
+    (void) min;
+    (void) max;
+    (void) invHistWidth;
+    (void) pMask;
+
     uint32x4_t      histoOffset;
     histoOffset = vidupq_u32((uint32_t) 0, 1);
+    /* each lane will be dispatched */
+    /* into differents sub-histograms */
+
     histoOffset = histoOffset * nbBins;
 
-    loopCnt = blockSize / 8;
+    /* unrolling */
+    int32_t         loopCnt = size / 8;
 
     uint32x4_t      offset0, offset1, hist;
 
@@ -77,30 +140,30 @@ static void arm_histogr_core_u8_mve(const channel_uint8_t * pSrc, uint16_t * pHi
         offset1 = vaddq_u32(offset1, histoOffset);
         pSrc += 4;
 
-        hist = vldrhq_gather_shifted_offset_u32(pHistoTmp, offset0);
+        hist = vldrhq_gather_shifted_offset_u32(pHistoSplit, offset0);
         hist = vaddq_n_u32(hist, 1);
-        vstrhq_scatter_shifted_offset_u32(pHistoTmp, offset0, hist);
+        vstrhq_scatter_shifted_offset_u32(pHistoSplit, offset0, hist);
 
         offset0 = vldrbq_u32(pSrc);
         offset0 = vaddq_u32(offset0, histoOffset);
         pSrc += 4;
 
-        hist = vldrhq_gather_shifted_offset_u32(pHistoTmp, offset1);
+        hist = vldrhq_gather_shifted_offset_u32(pHistoSplit, offset1);
         hist = vaddq_n_u32(hist, 1);
-        vstrhq_scatter_shifted_offset_u32(pHistoTmp, offset1, hist);
+        vstrhq_scatter_shifted_offset_u32(pHistoSplit, offset1, hist);
 
         loopCnt--;
     } while (loopCnt > 0);
 
     /* residual */
-    loopCnt = blockSize % 8;
+    loopCnt = size % 8;
     if (loopCnt) {
         do {
 
             mve_pred16_t    p = vctp32q(loopCnt);
-            hist = vldrhq_gather_shifted_offset_z_u32(pHistoTmp, offset0, p);
+            hist = vldrhq_gather_shifted_offset_z_u32(pHistoSplit, offset0, p);
             hist = vaddq_x(hist, 1, p);
-            vstrhq_scatter_shifted_offset_p_u32(pHistoTmp, offset0, hist, p);
+            vstrhq_scatter_shifted_offset_p_u32(pHistoSplit, offset0, hist, p);
 
             offset0 = vldrbq_u32(pSrc);
             offset0 = vaddq_u32(offset0, histoOffset);
@@ -109,73 +172,30 @@ static void arm_histogr_core_u8_mve(const channel_uint8_t * pSrc, uint16_t * pHi
         }
         while (loopCnt > 0);
     }
-
-
-    /* combine histograms */
-    uint16_t       *pHistoTmp0 = pHistoTmp;
-    uint16_t       *pHistoTmp1 = pHistoTmp0 + nbBins;
-    uint16_t       *pHistoTmp2 = pHistoTmp1 + nbBins;
-    uint16_t       *pHistoTmp3 = pHistoTmp2 + nbBins;
-
-    loopCnt = nbBins;
-    do {
-        mve_pred16_t    p = vctp16q(loopCnt);
-        uint16x8_t      v0, v1, v2, v3, sum;
-
-        v0 = vldrhq_z_u16(pHistoTmp0, p);
-        v1 = vldrhq_z_u16(pHistoTmp1, p);
-        v2 = vldrhq_z_u16(pHistoTmp2, p);
-        v3 = vldrhq_z_u16(pHistoTmp3, p);
-
-        sum = vaddq_x(v0, v1, p);
-        sum = vaddq_x(sum, v2, p);
-        sum = vaddq_x(sum, v3, p);
-
-        /* reload current histogram content and accumulate */
-        v0 = vldrhq_z_u16(pHistogVal, p);
-        sum = vaddq_x(sum, v0, p);
-
-        pHistoTmp0 += 8;
-        pHistoTmp1 += 8;
-        pHistoTmp2 += 8;
-        pHistoTmp3 += 8;
-
-        vstrhq_p_u16(pHistogVal, sum, p);
-        pHistogVal += 8;
-        loopCnt -= 8;
-    }
-    while (loopCnt > 0);
 }
 
 
 
-static void arm_histogr_core_u8_mask_mve(const channel_uint8_t * pSrc,
-                                         const channel_uint8_t * pMask, uint16_t * pHistogVal,
-                                         uint16_t nbBins, uint16_t size, uint32_t * scratch)
+
+
+static void arm_subhistogr_split_basic_mask(const channel_uint8_t * pSrc,
+                                            const channel_uint8_t * pMask,
+                                            const channel_uint8_t * lut, uint16_t min, uint16_t max,
+                                            uint16_t nbBins, uint32_t invHistWidth, uint32_t size,
+                                            uint16_t * pHistoSplit)
 {
-    int32_t         loopCnt = size;
-    uint16_t       *pHistoTmp = (uint16_t *) scratch;
+    (void) lut;
+    (void) min;
+    (void) max;
+    (void) invHistWidth;
 
-    /* clear sub-histograms */
-    loopCnt = nbBins * NB_SUB_HISTOGGRAMS;
-    do {
-        mve_pred16_t    p = vctp16q(loopCnt);
-
-        vstrhq_p_u16(pHistoTmp, vdupq_m_n_u16(vuninitializedq_u16(), 0, p), p);
-
-        pHistoTmp += 8;
-        loopCnt -= 8;
-    }
-    while (loopCnt > 0);
-
-    pHistoTmp = (uint16_t *) scratch;
-    /* each lane will be dispatched */
-    /* into differents sub-histograms */
     uint32x4_t      histoOffset;
     histoOffset = vidupq_u32((uint32_t) 0, 1);
     histoOffset = histoOffset * nbBins;
+    /* each lane will be dispatched */
+    /* into differents sub-histograms */
 
-    loopCnt = size / 8;
+    int32_t         loopCnt = size / 8;
 
     uint32x4_t      offset0, offset1, hist, mask;
 
@@ -191,9 +211,9 @@ static void arm_histogr_core_u8_mask_mve(const channel_uint8_t * pSrc,
         offset1 = vaddq_u32(offset1, histoOffset);
         pSrc += 4;
 
-        hist = vldrhq_gather_shifted_offset_u32(pHistoTmp, offset0);
+        hist = vldrhq_gather_shifted_offset_u32(pHistoSplit, offset0);
         hist = vaddq_x(hist, 1, vcmpeqq(mask, 1));
-        vstrhq_scatter_shifted_offset_u32(pHistoTmp, offset0, hist);
+        vstrhq_scatter_shifted_offset_u32(pHistoSplit, offset0, hist);
 
         mask = vldrbq_u32(pMask);
         pMask += 4;
@@ -202,12 +222,13 @@ static void arm_histogr_core_u8_mask_mve(const channel_uint8_t * pSrc,
         offset0 = vaddq_u32(offset0, histoOffset);
         pSrc += 4;
 
-        hist = vldrhq_gather_shifted_offset_u32(pHistoTmp, offset1);
+        hist = vldrhq_gather_shifted_offset_u32(pHistoSplit, offset1);
         hist = vaddq_x(hist, 1, vcmpeqq(mask, 1));
-        vstrhq_scatter_shifted_offset_u32(pHistoTmp, offset1, hist);
+        vstrhq_scatter_shifted_offset_u32(pHistoSplit, offset1, hist);
 
         loopCnt--;
     } while (loopCnt > 0);
+
 
     /* residual */
     loopCnt = size % 8;
@@ -219,9 +240,9 @@ static void arm_histogr_core_u8_mask_mve(const channel_uint8_t * pSrc,
             mask = vldrbq_u32(pMask);
             pMask += 4;
 
-            hist = vldrhq_gather_shifted_offset_z_u32(pHistoTmp, offset0, p);
+            hist = vldrhq_gather_shifted_offset_z_u32(pHistoSplit, offset0, p);
             hist = vaddq_x(hist, 1, vcmpeqq(mask, 1));
-            vstrhq_scatter_shifted_offset_p_u32(pHistoTmp, offset0, hist, p);
+            vstrhq_scatter_shifted_offset_p_u32(pHistoSplit, offset0, hist, p);
 
             offset0 = vldrbq_u32(pSrc);
             offset0 = vaddq_u32(offset0, histoOffset);
@@ -230,164 +251,68 @@ static void arm_histogr_core_u8_mask_mve(const channel_uint8_t * pSrc,
         }
         while (loopCnt > 0);
     }
-
-
-    /* combine histograms */
-    uint16_t       *pHistoTmp0 = pHistoTmp;
-    uint16_t       *pHistoTmp1 = pHistoTmp0 + nbBins;
-    uint16_t       *pHistoTmp2 = pHistoTmp1 + nbBins;
-    uint16_t       *pHistoTmp3 = pHistoTmp2 + nbBins;
-
-    loopCnt = nbBins;
-    do {
-        mve_pred16_t    p = vctp16q(loopCnt);
-        uint16x8_t      v0, v1, v2, v3, sum;
-
-        v0 = vldrhq_z_u16(pHistoTmp0, p);
-        v1 = vldrhq_z_u16(pHistoTmp1, p);
-        v2 = vldrhq_z_u16(pHistoTmp2, p);
-        v3 = vldrhq_z_u16(pHistoTmp3, p);
-
-        sum = vaddq_x(v0, v1, p);
-        sum = vaddq_x(sum, v2, p);
-        sum = vaddq_x(sum, v3, p);
-
-        /* reload current histogram content and accumulate */
-        v0 = vldrhq_z_u16(pHistogVal, p);
-        sum = vaddq_x(sum, v0, p);
-
-        pHistoTmp0 += 8;
-        pHistoTmp1 += 8;
-        pHistoTmp2 += 8;
-        pHistoTmp3 += 8;
-
-        vstrhq_p_u16(pHistogVal, sum, p);
-        pHistogVal += 8;
-        loopCnt -= 8;
-    }
-    while (loopCnt > 0);
 }
 
-static
-void arm_histogr_nonuniform_u8_mve(const channel_uint8_t * pSrc,
-                                   const arm_cv_hist_bounds_ctx * bounds, uint16_t nbBins,
-                                   uint16_t * pHistog, uint32_t size, uint32_t * scratch)
+
+static void arm_subhistogr_split_non_uniform(const channel_uint8_t * pSrc,
+                                             const channel_uint8_t * pMask,
+                                             const channel_uint8_t * lut, uint16_t min,
+                                             uint16_t max, uint16_t nbBins, uint32_t invHistWidth,
+                                             uint32_t size, uint16_t * pHistoSplit)
 {
-    int32_t         loopCnt = size;
-    uint16_t       *pHistoTmp = (uint16_t *) scratch;
+    (void) pMask;
+    (void) invHistWidth;
 
-    /* clear sub-histograms */
-    loopCnt = nbBins * NB_SUB_HISTOGGRAMS;
-    do {
-        mve_pred16_t    p = vctp16q(loopCnt);
-
-        vstrhq_p_u16(pHistoTmp, vdupq_m_n_u16(vuninitializedq_u16(), 0, p), p);
-
-        pHistoTmp += 8;
-        loopCnt -= 8;
-    }
-    while (loopCnt > 0);
-
-    pHistoTmp = (uint16_t *) scratch;
     /* each lane will be dispatched */
     /* into differents sub-histograms */
     uint32x4_t      histoOffset;
     histoOffset = vidupq_u32((uint32_t) 0, 1);
     histoOffset = histoOffset * nbBins;
-
-    loopCnt = size;
-    uint32x4_t      offset0, hist;
+    int32_t         loopCnt = size;
+    uint32x4_t      offset, hist;
 
 
     do {
         mve_pred16_t    p = vctp32q(loopCnt);
 
-        offset0 = vldrbq_u32(pSrc);
+        offset = vldrbq_u32(pSrc);
 
-        p = vcmpcsq_m_n_u32(offset0, bounds->min, p);
-        p = vcmphiq_m_u32(vdupq_n_u32(bounds->max), offset0, p);
+        p = vset_predq_bounds_u32_p(offset, min, max, p);
 
-        offset0 = vldrbq_gather_offset_z_u32(bounds->phistIntervLUT, offset0, p);
+        offset = vldrbq_gather_offset_z_u32(lut, offset, p);
 
-        offset0 = vaddq_u32(offset0, histoOffset);
+        offset = vaddq_u32(offset, histoOffset);
         pSrc += 4;
 
 
-        hist = vldrhq_gather_shifted_offset_z_u32(pHistoTmp, offset0, p);
+        hist = vldrhq_gather_shifted_offset_z_u32(pHistoSplit, offset, p);
         hist = vaddq_x(hist, 1, p);
-        vstrhq_scatter_shifted_offset_p_u32(pHistoTmp, offset0, hist, p);
+        vstrhq_scatter_shifted_offset_p_u32(pHistoSplit, offset, hist, p);
 
         loopCnt -= 4;
     }
     while (loopCnt > 0);
-
-
-    /* combine histograms */
-    uint16_t       *pHistoTmp0 = pHistoTmp;
-    uint16_t       *pHistoTmp1 = pHistoTmp0 + nbBins;
-    uint16_t       *pHistoTmp2 = pHistoTmp1 + nbBins;
-    uint16_t       *pHistoTmp3 = pHistoTmp2 + nbBins;
-
-    loopCnt = nbBins;
-    do {
-        mve_pred16_t    p = vctp16q(loopCnt);
-        uint16x8_t      v0, v1, v2, v3, sum;
-
-        v0 = vldrhq_z_u16(pHistoTmp0, p);
-        v1 = vldrhq_z_u16(pHistoTmp1, p);
-        v2 = vldrhq_z_u16(pHistoTmp2, p);
-        v3 = vldrhq_z_u16(pHistoTmp3, p);
-
-        sum = vaddq_x(v0, v1, p);
-        sum = vaddq_x(sum, v2, p);
-        sum = vaddq_x(sum, v3, p);
-
-        /* reload current histogram content and accumulate */
-        v0 = vldrhq_z_u16(pHistog, p);
-        sum = vaddq_x(sum, v0, p);
-
-        pHistoTmp0 += 8;
-        pHistoTmp1 += 8;
-        pHistoTmp2 += 8;
-        pHistoTmp3 += 8;
-
-        vstrhq_p_u16(pHistog, sum, p);
-        pHistog += 8;
-        loopCnt -= 8;
-    }
-    while (loopCnt > 0);
 }
 
-static
-void arm_histogr_nonuniform_u8_mask_mve(const channel_uint8_t * pSrc,
-                                        const arm_cv_hist_bounds_ctx * bounds,
-                                        const channel_uint8_t * pMask, uint16_t nbBins,
-                                        uint16_t * pHistog, uint32_t size, uint32_t * scratch)
+
+static void arm_subhistogr_split_non_uniform_mask(const channel_uint8_t * pSrc,
+                                                  const channel_uint8_t * pMask,
+                                                  const channel_uint8_t * lut, uint16_t min,
+                                                  uint16_t max, uint16_t nbBins,
+                                                  uint32_t invHistWidth, uint32_t size,
+                                                  uint16_t * pHistoSplit)
 {
-    int32_t         loopCnt = size;
-    uint16_t       *pHistoTmp = (uint16_t *) scratch;
-
-    /* clear sub-histograms */
-    loopCnt = nbBins * NB_SUB_HISTOGGRAMS;
-    do {
-        mve_pred16_t    p = vctp16q(loopCnt);
-
-        vstrhq_p_u16(pHistoTmp, vdupq_m_n_u16(vuninitializedq_u16(), 0, p), p);
-
-        pHistoTmp += 8;
-        loopCnt -= 8;
-    }
-    while (loopCnt > 0);
-
-    pHistoTmp = (uint16_t *) scratch;
     /* each lane will be dispatched */
     /* into differents sub-histograms */
     uint32x4_t      histoOffset;
     histoOffset = vidupq_u32((uint32_t) 0, 1);
     histoOffset = histoOffset * nbBins;
+    (void) pMask;
+    (void) invHistWidth;
 
-    loopCnt = size;
+    int32_t         loopCnt = size;
     uint32x4_t      offset, hist;
+
 
     do {
         mve_pred16_t    p = vctp32q(loopCnt);
@@ -395,11 +320,10 @@ void arm_histogr_nonuniform_u8_mask_mve(const channel_uint8_t * pSrc,
         offset = vldrbq_z_u32(pSrc, p);
 
         /* set predicate for value between min/max bounds */
-        p = vcmpcsq_m_n_u32(offset, bounds->min, p);
-        p = vcmphiq_m_u32(vdupq_n_u32(bounds->max), offset, p);
+        p = vset_predq_bounds_u32_p(offset, min, max, p);
 
         /* get new bound offsets from LUT */
-        offset = vldrbq_gather_offset_z_u32(bounds->phistIntervLUT, offset, p);
+        offset = vldrbq_gather_offset_z_u32(lut, offset, p);
 
         /* spread over 4 histograms */
         offset = vaddq_u32(offset, histoOffset);
@@ -412,21 +336,123 @@ void arm_histogr_nonuniform_u8_mask_mve(const channel_uint8_t * pSrc,
         /* combine predicate with masks */
         p = vcmpeqq_m(mask, 1, p);
 
-        hist = vldrhq_gather_shifted_offset_z_u32(pHistoTmp, offset, p);
+        hist = vldrhq_gather_shifted_offset_z_u32(pHistoSplit, offset, p);
         hist = vaddq_x(hist, 1, p);
-        vstrhq_scatter_shifted_offset_p_u32(pHistoTmp, offset, hist, p);
+        vstrhq_scatter_shifted_offset_p_u32(pHistoSplit, offset, hist, p);
 
         loopCnt -= 4;
 
     }
     while (loopCnt > 0);
+}
 
 
-    /* combine histograms */
-    uint16_t       *pHistoTmp0 = pHistoTmp;
-    uint16_t       *pHistoTmp1 = pHistoTmp0 + nbBins;
-    uint16_t       *pHistoTmp2 = pHistoTmp1 + nbBins;
-    uint16_t       *pHistoTmp3 = pHistoTmp2 + nbBins;
+static void arm_subhistogr_split_buckets(const channel_uint8_t * pSrc,
+                                         const channel_uint8_t * pMask,
+                                         const channel_uint8_t * lut, uint16_t min,
+                                         uint16_t max, uint16_t nbBins, uint32_t invHistWidth,
+                                         uint32_t size, uint16_t * pHistoSplit)
+{
+    /* each lane will be dispatched */
+    /* into differents sub-histograms */
+    uint32x4_t      histoOffset;
+    histoOffset = vidupq_u32((uint32_t) 0, 1);
+    histoOffset = histoOffset * nbBins;
+    (void) pMask;
+    (void) lut;
+
+    int32_t         loopCnt = size;
+    uint32x4_t      offset, hist;
+
+
+    do {
+        mve_pred16_t    p = vctp32q(loopCnt);
+
+        offset = vldrbq_u32(pSrc);
+        pSrc += 4;
+
+        /* filter out of bound + offset with -min */
+        p = vset_predq_bounds_u32_p(offset, min, max, p);
+
+        offset = vsubq_x(offset, min, p);
+
+        /* convert values into bucket index */
+        offset = offset * nbBins;
+        offset = vmulhq_u32(offset, vdupq_n_u32(invHistWidth));
+
+        /* spread over 4 histograms */
+        offset = vaddq_u32(offset, histoOffset);
+
+
+        hist = vldrhq_gather_shifted_offset_z_u32(pHistoSplit, offset, p);
+        hist = vaddq_x(hist, 1, p);
+        vstrhq_scatter_shifted_offset_p_u32(pHistoSplit, offset, hist, p);
+
+        loopCnt -= 4;
+    }
+    while (loopCnt > 0);
+
+}
+
+
+static void arm_subhistogr_split_buckets_mask(const channel_uint8_t * pSrc,
+                                              const channel_uint8_t * pMask,
+                                              const channel_uint8_t * lut, uint16_t min,
+                                              uint16_t max, uint16_t nbBins, uint32_t invHistWidth,
+                                              uint32_t size, uint16_t * pHistoSplit)
+{
+    /* each lane will be dispatched */
+    /* into differents sub-histograms */
+    uint32x4_t      histoOffset;
+    histoOffset = vidupq_u32((uint32_t) 0, 1);
+    histoOffset = histoOffset * nbBins;
+    (void) lut;
+
+    int32_t         loopCnt = size;
+    uint32x4_t      offset, hist;
+
+    do {
+        mve_pred16_t    p = vctp32q(loopCnt);
+
+        offset = vldrbq_u32(pSrc);
+        pSrc += 4;
+
+        /* filter out of bound + offset with -min */
+        p = vset_predq_bounds_u32_p(offset, min, max, p);
+        offset = vsubq_x(offset, min, p);
+
+        /* convert values into bucket index */
+        offset = offset * nbBins;
+        offset = vmulhq_u32(offset, vdupq_n_u32(invHistWidth));
+
+        /* spread over 4 histograms */
+        offset = vaddq_u32(offset, histoOffset);
+
+        /* load masks */
+        uint32x4_t      mask = vldrbq_z_u32(pMask, p);
+        pMask += 4;
+
+        /* combine predicate with masks */
+        p = vcmpeqq_m(mask, 1, p);
+
+        hist = vldrhq_gather_shifted_offset_z_u32(pHistoSplit, offset, p);
+        hist = vaddq_x(hist, 1, p);
+        vstrhq_scatter_shifted_offset_p_u32(pHistoSplit, offset, hist, p);
+
+        loopCnt -= 4;
+    }
+    while (loopCnt > 0);
+
+}
+
+static void arm_subhistogr_combine(const uint16_t * pHistoSplit, uint16_t nbBins,
+                                   uint16_t * pHistog, uint32_t size)
+{
+    int32_t         loopCnt = size;
+    const uint16_t *pHistoTmp0 = pHistoSplit;
+    const uint16_t *pHistoTmp1 = pHistoTmp0 + nbBins;
+    const uint16_t *pHistoTmp2 = pHistoTmp1 + nbBins;
+    const uint16_t *pHistoTmp3 = pHistoTmp2 + nbBins;
 
     loopCnt = nbBins;
     do {
@@ -458,6 +484,96 @@ void arm_histogr_nonuniform_u8_mask_mve(const channel_uint8_t * pSrc,
     while (loopCnt > 0);
 }
 
+
+
+
+static void arm_histogr_common_u8_mve(const channel_uint8_t * pSrc,
+                                      const channel_uint8_t * pMask, const channel_uint8_t * lut,
+                                      uint16_t min, uint16_t max, uint16_t nbBins,
+                                      uint32_t invHistWidth, uint16_t * pHistog, uint32_t size,
+                                      uint32_t * scratch, _arm_histogr_split_fct split)
+{
+    int32_t         loopCnt = size;
+    uint16_t       *pHistoSplit = (uint16_t *) scratch;
+
+    /* clear sub-histograms */
+    loopCnt = nbBins * NB_SUB_HISTOGGRAMS;
+    do {
+        mve_pred16_t    p = vctp16q(loopCnt);
+
+        vstrhq_p_u16(pHistoSplit, vdupq_m_n_u16(vuninitializedq_u16(), 0, p), p);
+        pHistoSplit += 8;
+        loopCnt -= 8;
+    }
+    while (loopCnt > 0);
+
+    pHistoSplit = (uint16_t *) scratch;
+
+    split(pSrc, pMask, lut, min, max, nbBins, invHistWidth, size, pHistoSplit);
+
+    arm_subhistogr_combine(pHistoSplit, nbBins, pHistog, size);
+}
+
+
+static void arm_histogr_core_u8_mve(const channel_uint8_t * pSrc, uint16_t * pHistog,
+                                    uint16_t nbBins, uint16_t size, uint32_t * scratch)
+{
+    arm_histogr_common_u8_mve(pSrc, NULL, NULL, 0, 0, nbBins, 0, pHistog, size, scratch,
+                              arm_subhistogr_split_basic);
+}
+
+
+
+static void arm_histogr_core_u8_mask_mve(const channel_uint8_t * pSrc,
+                                         const channel_uint8_t * pMask, uint16_t * pHistog,
+                                         uint16_t nbBins, uint16_t size, uint32_t * scratch)
+{
+    arm_histogr_common_u8_mve(pSrc, pMask, NULL, 0, 0, nbBins, 0, pHistog, size, scratch,
+                              arm_subhistogr_split_basic_mask);
+}
+
+static
+void arm_histogr_nonuniform_u8_mve(const channel_uint8_t * pSrc,
+                                   const arm_cv_hist_bounds_ctx * bounds, uint16_t nbBins,
+                                   uint16_t * pHistog, uint32_t size, uint32_t * scratch)
+{
+    arm_histogr_common_u8_mve(pSrc, NULL, bounds->phistIntervLUT, bounds->min, bounds->max, nbBins,
+                              0, pHistog, size, scratch, arm_subhistogr_split_non_uniform);
+}
+
+static
+void arm_histogr_nonuniform_u8_mask_mve(const channel_uint8_t * pSrc,
+                                        const arm_cv_hist_bounds_ctx * bounds,
+                                        const channel_uint8_t * pMask, uint16_t nbBins,
+                                        uint16_t * pHistog, uint32_t size, uint32_t * scratch)
+{
+    arm_histogr_common_u8_mve(pSrc, pMask, bounds->phistIntervLUT, bounds->min, bounds->max, nbBins,
+                              0, pHistog, size, scratch, arm_subhistogr_split_non_uniform_mask);
+}
+
+
+
+static
+void arm_histogr_buckets_u8_mve(const channel_uint8_t * pSrc,
+                                uint16_t min, uint16_t max, uint16_t nbBins, uint32_t invHistWidth,
+                                uint16_t * pHistog, uint32_t size, uint32_t * scratch)
+{
+    arm_histogr_common_u8_mve(pSrc, NULL, NULL, min, max, nbBins,
+                              invHistWidth, pHistog, size, scratch, arm_subhistogr_split_buckets);
+}
+
+
+
+static
+void arm_histogr_buckets_u8_mask_mve(const channel_uint8_t * pSrc,
+                                     const channel_uint8_t * pMask, uint16_t min, uint16_t max,
+                                     uint16_t nbBins, uint32_t invHistWidth, uint16_t * pHistog,
+                                     uint32_t size, uint32_t * scratch)
+{
+    arm_histogr_common_u8_mve(pSrc, pMask, NULL, min, max, nbBins,
+                              invHistWidth, pHistog, size, scratch,
+                              arm_subhistogr_split_buckets_mask);
+}
 
 
 static void arm_min_max_no_idx_u8(const uint8_t * pSrc, uint32_t size, uint8_t * min, uint8_t * max)
@@ -490,214 +606,7 @@ static void arm_min_max_no_idx_u8(const uint8_t * pSrc, uint32_t size, uint8_t *
 }
 
 
-
-
-static
-void arm_histogr_buckets_u8_mve(const channel_uint8_t * pSrc,
-                                uint16_t min, uint16_t max, uint16_t nbBins, uint32_t invHistWidth,
-                                uint16_t * pHistog, uint32_t size, uint32_t * scratch)
-{
-    int32_t         loopCnt = size;
-    uint16_t       *pHistoTmp = (uint16_t *) scratch;
-
-    /* clear sub-histograms */
-    loopCnt = nbBins * NB_SUB_HISTOGGRAMS;
-    do {
-        mve_pred16_t    p = vctp16q(loopCnt);
-
-        vstrhq_p_u16(pHistoTmp, vdupq_m_n_u16(vuninitializedq_u16(), 0, p), p);
-
-        pHistoTmp += 8;
-        loopCnt -= 8;
-    }
-    while (loopCnt > 0);
-
-    pHistoTmp = (uint16_t *) scratch;
-    /* each lane will be dispatched */
-    /* into differents sub-histograms */
-    uint32x4_t      histoOffset;
-    histoOffset = vidupq_u32((uint32_t) 0, 1);
-    histoOffset = histoOffset * nbBins;
-
-    loopCnt = size;
-    uint32x4_t      offset0, hist;
-
-
-    do {
-        mve_pred16_t    p = vctp32q(loopCnt);
-
-        offset0 = vldrbq_u32(pSrc);
-        pSrc += 4;
-
-        /* filter out of bound + offset with -min */
-        p = vcmpcsq_m_n_u32(offset0, min, p);
-        p = vcmphiq_m_u32(vdupq_n_u32(max), offset0, p);
-
-        offset0 = vsubq_x(offset0, min, p);
-
-        /* convert values into bucket index */
-        offset0 = offset0 * nbBins;
-        offset0 = vmulhq_u32(offset0, vdupq_n_u32(invHistWidth));
-
-        /* spread over 4 histograms */
-        offset0 = vaddq_u32(offset0, histoOffset);
-
-
-        hist = vldrhq_gather_shifted_offset_z_u32(pHistoTmp, offset0, p);
-        hist = vaddq_x(hist, 1, p);
-        vstrhq_scatter_shifted_offset_p_u32(pHistoTmp, offset0, hist, p);
-
-        loopCnt -= 4;
-    }
-    while (loopCnt > 0);
-
-
-    /* combine histograms */
-    uint16_t       *pHistoTmp0 = pHistoTmp;
-    uint16_t       *pHistoTmp1 = pHistoTmp0 + nbBins;
-    uint16_t       *pHistoTmp2 = pHistoTmp1 + nbBins;
-    uint16_t       *pHistoTmp3 = pHistoTmp2 + nbBins;
-
-    loopCnt = nbBins;
-    do {
-        mve_pred16_t    p = vctp16q(loopCnt);
-        uint16x8_t      v0, v1, v2, v3, sum;
-
-        v0 = vldrhq_z_u16(pHistoTmp0, p);
-        v1 = vldrhq_z_u16(pHistoTmp1, p);
-        v2 = vldrhq_z_u16(pHistoTmp2, p);
-        v3 = vldrhq_z_u16(pHistoTmp3, p);
-
-        sum = vaddq_x(v0, v1, p);
-        sum = vaddq_x(sum, v2, p);
-        sum = vaddq_x(sum, v3, p);
-
-        /* reload current histogram content and accumulate */
-        v0 = vldrhq_z_u16(pHistog, p);
-        sum = vaddq_x(sum, v0, p);
-
-        pHistoTmp0 += 8;
-        pHistoTmp1 += 8;
-        pHistoTmp2 += 8;
-        pHistoTmp3 += 8;
-
-        vstrhq_p_u16(pHistog, sum, p);
-        pHistog += 8;
-        loopCnt -= 8;
-    }
-    while (loopCnt > 0);
-}
-
-
-
-
-
-
-static
-void arm_histogr_buckets_u8_mask_mve(const channel_uint8_t * pSrc,
-                                const channel_uint8_t * pMask, uint16_t min, uint16_t max, uint16_t nbBins, uint32_t invHistWidth,
-                                uint16_t * pHistog, uint32_t size, uint32_t * scratch)
-{
-    int32_t         loopCnt = size;
-    uint16_t       *pHistoTmp = (uint16_t *) scratch;
-
-    /* clear sub-histograms */
-    loopCnt = nbBins * NB_SUB_HISTOGGRAMS;
-    do {
-        mve_pred16_t    p = vctp16q(loopCnt);
-
-        vstrhq_p_u16(pHistoTmp, vdupq_m_n_u16(vuninitializedq_u16(), 0, p), p);
-
-        pHistoTmp += 8;
-        loopCnt -= 8;
-    }
-    while (loopCnt > 0);
-
-    pHistoTmp = (uint16_t *) scratch;
-    /* each lane will be dispatched */
-    /* into differents sub-histograms */
-    uint32x4_t      histoOffset;
-    histoOffset = vidupq_u32((uint32_t) 0, 1);
-    histoOffset = histoOffset * nbBins;
-
-    loopCnt = size;
-    uint32x4_t      offset0, hist;
-
-
-    do {
-        mve_pred16_t    p = vctp32q(loopCnt);
-
-        offset0 = vldrbq_u32(pSrc);
-        pSrc += 4;
-
-        /* filter out of bound + offset with -min */
-        p = vcmpcsq_m_n_u32(offset0, min, p);
-        p = vcmphiq_m_u32(vdupq_n_u32(max), offset0, p);
-
-        offset0 = vsubq_x(offset0, min, p);
-
-        /* convert values into bucket index */
-        offset0 = offset0 * nbBins;
-        offset0 = vmulhq_u32(offset0, vdupq_n_u32(invHistWidth));
-
-        /* spread over 4 histograms */
-        offset0 = vaddq_u32(offset0, histoOffset);
-
-        /* load masks */
-        uint32x4_t      mask = vldrbq_z_u32(pMask, p);
-        pMask += 4;
-
-        /* combine predicate with masks */
-        p = vcmpeqq_m(mask, 1, p);
-
-        hist = vldrhq_gather_shifted_offset_z_u32(pHistoTmp, offset0, p);
-        hist = vaddq_x(hist, 1, p);
-        vstrhq_scatter_shifted_offset_p_u32(pHistoTmp, offset0, hist, p);
-
-        loopCnt -= 4;
-    }
-    while (loopCnt > 0);
-
-
-    /* combine histograms */
-    uint16_t       *pHistoTmp0 = pHistoTmp;
-    uint16_t       *pHistoTmp1 = pHistoTmp0 + nbBins;
-    uint16_t       *pHistoTmp2 = pHistoTmp1 + nbBins;
-    uint16_t       *pHistoTmp3 = pHistoTmp2 + nbBins;
-
-    loopCnt = nbBins;
-    do {
-        mve_pred16_t    p = vctp16q(loopCnt);
-        uint16x8_t      v0, v1, v2, v3, sum;
-
-        v0 = vldrhq_z_u16(pHistoTmp0, p);
-        v1 = vldrhq_z_u16(pHistoTmp1, p);
-        v2 = vldrhq_z_u16(pHistoTmp2, p);
-        v3 = vldrhq_z_u16(pHistoTmp3, p);
-
-        sum = vaddq_x(v0, v1, p);
-        sum = vaddq_x(sum, v2, p);
-        sum = vaddq_x(sum, v3, p);
-
-        /* reload current histogram content and accumulate */
-        v0 = vldrhq_z_u16(pHistog, p);
-        sum = vaddq_x(sum, v0, p);
-
-        pHistoTmp0 += 8;
-        pHistoTmp1 += 8;
-        pHistoTmp2 += 8;
-        pHistoTmp3 += 8;
-
-        vstrhq_p_u16(pHistog, sum, p);
-        pHistog += 8;
-        loopCnt -= 8;
-    }
-    while (loopCnt > 0);
-}
-
-
 #else
-
 
 
 static void arm_min_max_no_idx_u8(const uint8_t * pSrc, uint32_t size, uint8_t * min, uint8_t * max)
@@ -804,29 +713,60 @@ static void arm_scale_u8(const channel_uint8_t * pSrc,
 
 }
 
+
+static
+void arm_histogr_buckets_u8(const arm_cv_image_gray8_t * pImageIn,
+                            uint16_t min, uint16_t max, uint16_t nbBins, uint32_t invHistWidth,
+                            uint16_t * pHistog, uint32_t * scratch)
+{
+    const channel_uint8_t *pSrc = pImageIn->pData;
+    uint32_t        blockSize;
+    for (uint32_t rows = 0; rows < pImageIn->height; rows++) {
+        /* remove offset and filter out of bound items */
+        blockSize =
+            arm_offset_filter_u8(pSrc, min, max, (channel_uint8_t *) scratch, pImageIn->width);
+
+        /* convert values into bucket index */
+        arm_scale_u8((channel_uint8_t *) scratch, invHistWidth, nbBins,
+                     (channel_uint8_t *) scratch, blockSize);
+
+        /* build histogram */
+        arm_histogr_core_u8((channel_uint8_t *) scratch, pHistog, blockSize);
+
+        pSrc += pImageIn->width;
+    }
+}
+
+static
+void arm_histogr_buckets_u8_mask(const arm_cv_image_gray8_t * pImageIn,
+                                 const channel_uint8_t * pMask, uint16_t min, uint16_t max,
+                                 uint16_t nbBins, uint32_t invHistWidth, uint16_t * pHistog,
+                                 uint32_t * scratch)
+{
+    const channel_uint8_t *pSrc = pImageIn->pData;
+    uint32_t        blockSize;
+    for (uint32_t rows = 0; rows < pImageIn->height; rows++) {
+        /* remove offset and filter out of bound items */
+
+        blockSize =
+            arm_offset_filter_with_mask_u8(pSrc, pMask, min, max,
+                                           (channel_uint8_t *) scratch, pImageIn->width);
+        pMask += pImageIn->width;
+
+        /* convert values into bucket index */
+        arm_scale_u8((channel_uint8_t *) scratch, invHistWidth, nbBins,
+                     (channel_uint8_t *) scratch, blockSize);
+
+        /* build histogram */
+        arm_histogr_core_u8((channel_uint8_t *) scratch, pHistog, blockSize);
+
+        pSrc += pImageIn->width;
+    }
+}
+
 #endif
 
 
-static
-void arm_histogr_core_u8(const channel_uint8_t * pIn, uint16_t * pHistog, uint32_t size)
-{
-
-    for (uint32_t i = 0; i < size; i++)
-        pHistog[*pIn++] += 1;
-}
-
-static
-void arm_histogr_core_u8_mask(const channel_uint8_t * pIn, const channel_uint8_t * pMask,
-                              uint16_t * pHistog, uint32_t size)
-{
-    for (uint32_t i = 0; i < size; i++) {
-        channel_uint8_t in = *pIn++;
-        channel_uint8_t mask = *pMask++;
-
-        if (mask)
-            pHistog[in] += 1;
-    }
-}
 
 
 static uint8_t arm_histogram_get_interval_idx(uint8_t * histIntervLUT, int value)
@@ -890,12 +830,16 @@ uint16_t arm_histogram_gray8_get_scratch_size(const arm_cv_image_gray8_t * pImag
 {
     uint16_t        scratchSize = 0;
 
-#if defined(ARM_MATH_MVEI)
+#if (defined(ARM_MATH_MVEI) && !defined(FORCE_SCALAR))
+    (void) pImageIn;
+    (void) bounds;
+
     /* need room for 4 sub-histograms */
     scratchSize += nbBins * 4 * sizeof(uint16_t);
-#endif
+#else
     if ((bounds && (bounds->min != 0) && (bounds->max != 255)) || (nbBins != 256))
         scratchSize += pImageIn->width;
+#endif
     return scratchSize;
 }
 
@@ -958,7 +902,7 @@ arm_cv_status arm_histogram_gray8(const arm_cv_image_gray8_t * pImageIn,
                                   const arm_cv_hist_bounds_ctx * bounds, uint32_t uniform,
                                   uint32_t accumulate, uint32_t * scratch)
 {
-    uint16_t        blockSize = pImageIn->height * pImageIn->width;
+    uint32_t        blockSize = pImageIn->height * pImageIn->width;
     channel_uint8_t *pSrc = pImageIn->pData;
     channel_uint8_t *pMaskSrc = NULL;
 
@@ -987,7 +931,7 @@ arm_cv_status arm_histogram_gray8(const arm_cv_image_gray8_t * pImageIn,
 
 
         if (pMaskSrc) {
-#if defined(ARM_MATH_MVEI)
+#if (defined(ARM_MATH_MVEI) && !defined(FORCE_SCALAR))
             if (blockSize > nbBins)
                 arm_histogr_nonuniform_u8_mask_mve(pSrc, bounds, pMaskSrc, nbBins, pHistogVal,
                                                    blockSize, scratch);
@@ -996,7 +940,7 @@ arm_cv_status arm_histogram_gray8(const arm_cv_image_gray8_t * pImageIn,
                 arm_histogr_nonuniform_u8_mask(pSrc, bounds, pMaskSrc, pHistogVal, blockSize);
 
         } else {
-#if defined(ARM_MATH_MVEI)
+#if (defined(ARM_MATH_MVEI) && !defined(FORCE_SCALAR))
             if (blockSize > nbBins) {
                 arm_histogr_nonuniform_u8_mve(pSrc, bounds, nbBins, pHistogVal, blockSize, scratch);
             } else
@@ -1017,6 +961,7 @@ arm_cv_status arm_histogram_gray8(const arm_cv_image_gray8_t * pImageIn,
             min = bounds->min;
             max = bounds->max + 1;
 
+            /* could potentially be relaxed */
             if (max < min || nbBins > (max - min)) {
                 return ARM_CV_ARGUMENT_ERROR;
             }
@@ -1043,38 +988,21 @@ arm_cv_status arm_histogram_gray8(const arm_cv_image_gray8_t * pImageIn,
             arm_histogr_buckets_u8_mve(pSrc, min, max, nbBins, invHistWidth, pHistogVal, blockSize,
                                        scratch);
         else
-            arm_histogr_buckets_u8_mask_mve(pSrc, pMaskSrc, min, max, nbBins, invHistWidth, pHistogVal, blockSize,
-                                       scratch);
+            arm_histogr_buckets_u8_mask_mve(pSrc, pMaskSrc, min, max, nbBins, invHistWidth,
+                                            pHistogVal, blockSize, scratch);
 #else
-        {
-            for (uint32_t rows = 0; rows < pImageIn->height; rows++) {
-                /* remove offset and filter out of bound items */
-                if (pMaskSrc) {
-                    blockSize =
-                        arm_offset_filter_with_mask_u8(pSrc, pMaskSrc, min, max,
-                                                       (channel_uint8_t *) scratch,
-                                                       pImageIn->width);
-                    pMaskSrc += pImageIn->width;
-                } else
-                    blockSize =
-                        arm_offset_filter_u8(pSrc, min, max, (channel_uint8_t *) scratch,
-                                             pImageIn->width);
+        if (!pMaskSrc)
+            arm_histogr_buckets_u8(pImageIn, min, max, nbBins, invHistWidth, pHistogVal, scratch);
+        else
+            arm_histogr_buckets_u8_mask(pImageIn, pMaskSrc, min, max, nbBins, invHistWidth,
+                                        pHistogVal, scratch);
 
-                /* convert values into bucket index */
-                arm_scale_u8((channel_uint8_t *) scratch, invHistWidth, nbBins,
-                             (channel_uint8_t *) scratch, blockSize);
 
-                /* build histogram */
-                arm_histogr_core_u8((channel_uint8_t *) scratch, pHistogVal, blockSize);
-
-                pSrc += pImageIn->width;
-            }
-        }
 #endif
     } else {
         /* no bucketting needed */
         if (pMaskSrc) {
-#if defined(ARM_MATH_MVEI)
+#if (defined(ARM_MATH_MVEI) && !defined(FORCE_SCALAR))
             /* do not use MVE for degenerated cases */
             if (blockSize > nbBins)
                 arm_histogr_core_u8_mask_mve(pSrc, pMaskSrc, pHistogVal, nbBins, blockSize,
@@ -1083,19 +1011,11 @@ arm_cv_status arm_histogram_gray8(const arm_cv_image_gray8_t * pImageIn,
 #endif
                 arm_histogr_core_u8_mask(pSrc, pMaskSrc, pHistogVal, blockSize);
         } else {
-#if defined(ARM_MATH_MVEI)
+#if (defined(ARM_MATH_MVEI) && !defined(FORCE_SCALAR))
             /* do not use MVE for degenerated cases */
             if (blockSize > nbBins)
                 arm_histogr_core_u8_mve(pSrc, pHistogVal, nbBins, blockSize, scratch);
             else
-//            dump_buf(pHistogVal, nbBins, nbBins, "%d");
-
-//            for (int i = 0; i < nbBins; i++)
-//                pHistogVal[i] = 0;
-
-//            arm_histogr_core_u8(pSrc, pHistogVal, blockSize);
-//            printf("\nref\n");
-//            dump_buf(pHistogVal, nbBins, nbBins, "%d");
 #endif
                 arm_histogr_core_u8(pSrc, pHistogVal, blockSize);
 

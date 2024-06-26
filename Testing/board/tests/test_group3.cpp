@@ -3,6 +3,7 @@
 #include "test_config.h"
 #include <vector>
 #include <stdio.h>
+#undef NDEBUG
 #include <cassert>
 
 extern          "C" {
@@ -18,7 +19,7 @@ extern          "C" {
           ARR(BOUNDS_EDGES);                                \
         ;                                                   \
                                                             \
-        test_gray8_histogr(inputs, wbuf, total_bytes, testid, cycles, \
+        status = test_gray8_histogr(inputs, wbuf, total_bytes, testid, cycles, \
                                                 NB_BINS, bounds, UNIFORM, WITH_MASKS, WITH_ACCUM); \
     }
 
@@ -143,6 +144,7 @@ void run_test(const unsigned char *inputs,
               const uint32_t funcid, unsigned char *&wbuf, uint32_t & total_bytes, long &cycles)
 {
     wbuf = nullptr;
+    arm_cv_status status = ARM_CV_ARGUMENT_ERROR;
     switch (funcid) {
 
       case 0:
@@ -205,8 +207,20 @@ void run_test(const unsigned char *inputs,
           GRAY8_HISTOGR_UT(6, 7, ARR({0, 10, 20, 40, 80, 160, 200}), false, true, false);
           break;
 
+      case 15:
+          GRAY8_HISTOGR_UT(256, 2, ARR({10, 200 - 1}), true, false, false);
+          break;
 
+      case 16:
+          GRAY8_HISTOGR_UT(256, 2, ARR({10, 200 - 1}), true, true, false);
+          break;
+
+      default:
+        assert("invalid testID\n");
     }
+
+    if(status != ARM_CV_SUCCESS)
+         printf("Test %d returns an error \n", funcid);
 
 }
 
