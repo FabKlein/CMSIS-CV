@@ -105,3 +105,19 @@ def gray8_histogr_test(imgid,imgdim,funcid,args):
             "reference": Gray8Histogram(args),
             "check" : SimilarTensorFixp()
            }
+
+def canny_sobel_test(imgid, imgdim, funcid=2, img_type="gray8"):
+    return {"desc":f"Gauss {img_type} image {imgdim[0]}x{imgdim[1]}",
+            "funcid": funcid,
+            "useimg": [imgid],
+            "reference": CannyEdge(),
+            "check" : SimilarImage(1)
+            }
+
+def canny_sobel_test_autoref(imgid, imgdim, funcid=0, img_type="gray8"):
+    return {"desc":f"Gauss {img_type} image {imgdim[0]}x{imgdim[1]}",
+            "funcid": funcid,
+            "useimg": [imgid],
+            "reference": CannyEdgeAutoRef(),
+            "check" : SimilarTensorFixp(0)
+            }
