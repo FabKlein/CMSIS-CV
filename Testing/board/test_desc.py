@@ -11,13 +11,48 @@ STANDARD_YUV_IMG_SIZES = yuv_image_dims(np.int8)
 STANDARD_GRAY_IMG_SIZES = image_dims(np.int8)
 STANDARD_RGB_IMG_SIZES = image_dims(np.int8)
 
-#STANDARD_GRAY_IMG_SIZES_HISTOG_TEST = [(128,128), (127, 63)]
-STANDARD_GRAY_IMG_SIZES_HISTOG_TEST = STANDARD_GRAY_IMG_SIZES
 
 #print(len(STANDARD_IMG_SIZES))
 #print(len(STANDARD_YUV_IMG_SIZES))
 #print(len(STANDARD_GRAY_IMG_SIZES))
 #print(len(STANDARD_RGB_IMG_SIZES))
+
+
+def gray8_histogram_tests_list():
+
+    histograms = []
+
+    histogram_params = [
+        #(histsize histRange accum uniform useMask)
+        (256, (0, 256), 0, True, False),  # basic uniform 256 bins over [0-256[ range, no accumulation
+        (256, (0, 256), 1, True, False),  # basic uniform 256 bins over [0-256[ range, with accumulation
+        (128, (0, 256), 0, True, False),  # uniform 128 bins over [0-256[ range, no accumulation
+        (10,  (0, 256), 0, True, False),  # uniform 10 bins over [0-256[ range, no accumulationn
+        (33,  (0, 256), 0, True, False),  # uniform 33 bins over [0-256[ range, no accumulation
+        (55,  (0, 256), 0, True, False),  # uniform 55 bins over [0-256[ range, no accumulation
+        (64,  (0, 256), 0, True, False),  # uniform 64 bins over [0-256[ range, no accumulation
+        (200, (0, 256), 0, True, False),  # uniform 200 bins over [0-256[ range, no accumulation
+        (128, (10,246), 0, True, False),  # uniform 128 bins over [10-246[ range, no accumulation
+        (10,  (100,200),0, True, False),  # uniform 10 bins over [100-200[ range, no accumulation
+        (33,  (33,99),  0, True, False),  # uniform 33 bins over [33-99[ range, no accumulation
+        (6,   (0,10,20,40,80,160,200),
+                        0, False, False), # non-uniform 6 bins over [0|10|20|40|80|160|200[ range, no accumulation
+        (256, (0,256),0, True, True),     # uniform 256 bins over [0-256[ range, no accumulation, with masks
+        (33,  (33,99),0, True, True),     # uniform 13 bins over [33-99[ range, no accumulation, with masks
+        (6,   (0,10,20,40,80,160,200),
+                        0, False, True),  # non-uniform 6 bins over [0|10|20|40|80|160|200[ range, no accumulation, with masks
+    ]
+
+    for param_id, param in enumerate(histogram_params):
+        # Calculate the image ID offset
+        img_id_offset = param_id * len(STANDARD_GRAY_IMG_SIZES)
+
+        histograms += [
+            gray8_histogr_test(img_id + img_id_offset, img_dim, param_id, param)
+            for img_id, img_dim in enumerate(STANDARD_GRAY_IMG_SIZES)
+        ]
+
+    return histograms
 
 
 # The tests are written using the fuction linear_copy to show how one can use
@@ -73,7 +108,10 @@ allSuites = [
                    path="Patterns/JellyBeans.tiff"),
                    ImageGen([(128,128)],
                    format=Format.BGR8U3C,
-                   path="Patterns/JellyBeans.tiff")
+                   path="Patterns/JellyBeans.tiff"),
+                   ImageGen(STANDARD_GRAY_IMG_SIZES,
+                   format=Format.GRAY8,
+                   path="Patterns/Mandrill.tiff"),
         ],
         "tests":
           [gray8_crop_test((128,128),0,15,15,113,113),
@@ -107,52 +145,8 @@ allSuites = [
            bgr8U3C_resize_to_rgb_test((128,128),28,150,150),
            bgr8U3C_resize_to_rgb_test((128,128),29,256,256),
           ]
-    },
-    {
-        "name" : "Misc",
-        "define": "TESTGROUP3",
-        "inputs": [
-            ImageGen(33*STANDARD_GRAY_IMG_SIZES_HISTOG_TEST,
-                #  ImageGen([(128,128), (64,64)],
-                   format=Format.GRAY8,
-                   path="Patterns/Mandrill.tiff"),
-                   ],
-        "tests":
-          (
-          # histsize,  histRange,  accumulate, uniform, useMask
-
-          # basic uniform 256 bins over [0-256[ range, no accumulation
-          [gray8_histogr_test(imgid, imgdim, 0, (256,(0,256),0, True, False)) for imgid,imgdim in enumerate(STANDARD_GRAY_IMG_SIZES_HISTOG_TEST)] +
-          # basic uniform 256 bins over [0-256[ range, with accumulation
-          [gray8_histogr_test(imgid+len(STANDARD_GRAY_IMG_SIZES_HISTOG_TEST), imgdim, 1, (256,(0,256),1, True, False)) for imgid,imgdim in enumerate(STANDARD_GRAY_IMG_SIZES_HISTOG_TEST)] +
-          # uniform 128 bins over [0-256[ range, no accumulation
-          [gray8_histogr_test(imgid, imgdim, 2, (128,(0,256),0, True, False)) for imgid,imgdim in enumerate(STANDARD_GRAY_IMG_SIZES_HISTOG_TEST)] +
-          # uniform 10 bins over [0-256[ range, no accumulation
-          [gray8_histogr_test(imgid, imgdim, 3, (10,(0,256),0, True, False )) for imgid,imgdim in enumerate(STANDARD_GRAY_IMG_SIZES_HISTOG_TEST)] +
-          # uniform 33 bins over [0-256[ range, no accumulation
-          [gray8_histogr_test(imgid, imgdim, 4, (33,(0,256),0, True, False)) for imgid,imgdim in enumerate(STANDARD_GRAY_IMG_SIZES_HISTOG_TEST)] +
-          # uniform 55 bins over [0-256[ range, no accumulation
-          [gray8_histogr_test(imgid, imgdim, 5, (55,(0,256),0, True, False)) for imgid,imgdim in enumerate(STANDARD_GRAY_IMG_SIZES_HISTOG_TEST)] +
-          # uniform 64 bins over [0-256[ range, no accumulation
-          [gray8_histogr_test(imgid, imgdim, 6, (64,(0,256),0, True, False)) for imgid,imgdim in enumerate(STANDARD_GRAY_IMG_SIZES_HISTOG_TEST)] +
-          # uniform 200 bins over [0-256[ range, no accumulation
-          [gray8_histogr_test(imgid, imgdim, 7, (200,(0,256),0, True, False)) for imgid,imgdim in enumerate(STANDARD_GRAY_IMG_SIZES_HISTOG_TEST)] +
-          # uniform 128 bins over [10-246[ range, no accumulation
-          [gray8_histogr_test(imgid, imgdim, 8, (128,(10,246),0, True, False)) for imgid,imgdim in enumerate(STANDARD_GRAY_IMG_SIZES_HISTOG_TEST)] +
-          # uniform 10 bins over [100-200[ range, no accumulation
-          [gray8_histogr_test(imgid, imgdim, 9, (10,(100,200),0, True, False)) for imgid,imgdim in enumerate(STANDARD_GRAY_IMG_SIZES_HISTOG_TEST)] +
-          # uniform 33 bins over [33-99[ range, no accumulation
-          [gray8_histogr_test(imgid, imgdim, 10, (33,(33,99),0, True, False)) for imgid,imgdim in enumerate(STANDARD_GRAY_IMG_SIZES_HISTOG_TEST)] +
-          # non-uniform 6 bins over [0|10|20|40|80|160|200[ range, no accumulation
-          [gray8_histogr_test(imgid, imgdim, 11, (6,(0,10,20,40,80,160,200),0, False, False)) for imgid,imgdim in enumerate(STANDARD_GRAY_IMG_SIZES_HISTOG_TEST)] +
-          # uniform 256 bins over [0-256[ range, no accumulation, with masks
-          [gray8_histogr_test(imgid, imgdim, 12, (256,(0,256),0, True, True)) for imgid,imgdim in enumerate(STANDARD_GRAY_IMG_SIZES_HISTOG_TEST)] +
-          # uniform 13 bins over [33-99[ range, no accumulation, with masks
-          [gray8_histogr_test(imgid, imgdim, 13, (33,(33,99),0, True, True)) for imgid,imgdim in enumerate(STANDARD_GRAY_IMG_SIZES_HISTOG_TEST)] +
-          # non-uniform 6 bins over [0|10|20|40|80|160|200[ range, no accumulation, with masks
-          [gray8_histogr_test(imgid, imgdim, 14, (6,(0,10,20,40,80,160,200),0, False, True)) for imgid,imgdim in enumerate(STANDARD_GRAY_IMG_SIZES_HISTOG_TEST)]
-          )
-
+          +
+          [gray8_histogr_equalize_test(imgid+3, imgdim, 30) for imgid,imgdim in enumerate(STANDARD_GRAY_IMG_SIZES)]
     },
     {
         "name" : "Feature Detection",
@@ -223,6 +217,19 @@ allSuites = [
            [canny_sobel_test_autoref(imgid+5+8*len(STANDARD_IMG_SIZES), imgdim) for imgid,imgdim in enumerate(STANDARD_IMG_SIZES)]+
            [canny_sobel_test_autoref(imgid+5+9*len(STANDARD_IMG_SIZES), imgdim) for imgid,imgdim in enumerate(STANDARD_IMG_SIZES)]+
            [canny_sobel_test_autoref(imgid+5+10*len(STANDARD_IMG_SIZES), imgdim) for imgid,imgdim in enumerate(STANDARD_IMG_SIZES)]
+    },
+    {
+        "name" : "Image Analysis",
+        "define": "TESTGROUP4",
+        "inputs": [
+            ImageGen(15*STANDARD_GRAY_IMG_SIZES,
+                   format=Format.GRAY8,
+                   path="Patterns/Mandrill.tiff"),
+                   ],
+        "tests":
+          (
+          gray8_histogram_tests_list()
+          )
     },
 ]
 

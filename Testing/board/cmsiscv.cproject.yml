@@ -17,6 +17,7 @@ project:
         - file: ../../Source/ImageTransforms/arm_image_resize_gray8_f32.c
         - file: ../../Source/ImageTransforms/arm_image_resize_common_f32.c
         - file: ../../Source/ImageTransforms/arm_image_resize_bgr_8U3C_to_rgb24_f32.c
+        - file: ../../Source/ImageTransforms/arm_hist_equalize_gray8.c
         - file: ../../Source/ImageAnalysis/arm_histogram_gray8.c
     - group: Tests
       files:

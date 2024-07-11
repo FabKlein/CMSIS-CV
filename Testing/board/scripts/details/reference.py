@@ -1,5 +1,6 @@
 import cv2 as cv
 from ..test_utils import *
+from skimage import io, exposure
 
 #############################
 # Generation of references
@@ -371,6 +372,40 @@ class GaussianFilter:
     def nb_references(self,srcs):
         return len(srcs)
 
+class CannyEdge:
+    def __call__(self,args,group_id,test_id,srcs):
+        procesed = []
+        for i in srcs:
+            canny = cv.Canny(i.tensor, 95,78)
+            # Pack the image in an AlgoImage and add it to the reference patterns
+            # If we get the blur as it is, it will be recorded as an .npy file
+            # It would be simpler with a gray8 as tiff image
+            # So we need to convert back to Pillow
+            pil = PIL.Image.fromarray(canny)
+            procesed.append(AlgoImage(pil))
+
+        # Record the filtered images
+        for image_id,img in enumerate(procesed):
+            record_reference_img(args,group_id,test_id,image_id,img)
+
+    def nb_references(self,srcs):
+        return len(srcs)
+
+class CannyEdgeAutoRef:
+
+    def __call__(self,args,group_id,test_id,srcs):
+        procesed = []
+        pil = AlgoImage.open(f"RefPatterns/test_{test_id}_img_0.tiff")
+        procesed.append(pil)
+
+        # Record the filtered images
+        for image_id,img in enumerate(procesed):
+            record_reference_img(args,group_id,test_id,image_id,img)
+
+    def nb_references(self,srcs):
+        return len(srcs)
+
+
 class Gray8Histogram:
     def __init__(self,args):
          self.args = args
@@ -438,35 +473,44 @@ class Gray8Histogram:
     def nb_references(self,srcs):
         return len(srcs)
 
-class CannyEdge:
+def custom_histogram_equalize(image):
+    # Compute histogram
+    hist, bins = np.histogram(image, bins=256, range=(0, 256))
+
+    # Normalize histogram
+    hist_normalized = hist / np.sum(hist)
+
+    # CDF
+    cdf = np.cumsum(hist_normalized)
+
+    # Create a mapping function
+    def mapping_function(pixel_value):
+        return int(255 * cdf[pixel_value])
+
+    # Apply the transformation to each pixel
+    normalized_image = np.vectorize(mapping_function)(image)
+    return normalized_image
+
+
+class Gray8HistogramEqualize:
+
     def __call__(self,args,group_id,test_id,srcs):
-        procesed = []
+        filtered = []
         for i in srcs:
-            canny = cv.Canny(i.tensor, 95,78)
-            # Pack the image in an AlgoImage and add it to the reference patterns
-            # If we get the blur as it is, it will be recorded as an .npy file
-            # It would be simpler with a gray8 as tiff image
-            # So we need to convert back to Pillow
-            pil = PIL.Image.fromarray(canny)
-            procesed.append(AlgoImage(pil))
+
+            #b_hist2 = cv.equalizeHist(i.tensor)
+            #b_hist = custom_histogram_equalize(i.tensor)
+            # use sckimage
+            b_hist = exposure.equalize_hist(i.tensor)
+            b_hist = b_hist * 255
+            b_hist = b_hist.astype(np.uint8)
+
+            filtered.append(AlgoImage(b_hist.astype(np.uint8)))
 
         # Record the filtered images
-        for image_id,img in enumerate(procesed):
+        for image_id,img in enumerate(filtered):
             record_reference_img(args,group_id,test_id,image_id,img)
 
     def nb_references(self,srcs):
         return len(srcs)
 
-class CannyEdgeAutoRef:
-
-    def __call__(self,args,group_id,test_id,srcs):
-        procesed = []
-        pil = AlgoImage.open(f"RefPatterns/test_{test_id}_img_0.tiff")
-        procesed.append(pil)
-
-        # Record the filtered images
-        for image_id,img in enumerate(procesed):
-            record_reference_img(args,group_id,test_id,image_id,img)
-
-    def nb_references(self,srcs):
-        return len(srcs)

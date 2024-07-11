@@ -98,13 +98,6 @@ def bgr8U3C_resize_to_rgb_test(imgdim,funcid,dst_w,dst_h):
             "check" : SimilarTensorFixp(20)
            }
 
-def gray8_histogr_test(imgid,imgdim,funcid,args):
-    return {"desc":f"Gray 8 histogram test {imgdim[0]}x{imgdim[1]}, funcid:{funcid} : args {args} ",
-            "funcid": funcid,
-            "useimg": [imgid],
-            "reference": Gray8Histogram(args),
-            "check" : SimilarTensorFixp()
-           }
 
 def canny_sobel_test(imgid, imgdim, funcid=2, img_type="gray8"):
     return {"desc":f"Gauss {img_type} image {imgdim[0]}x{imgdim[1]}",
@@ -121,3 +114,19 @@ def canny_sobel_test_autoref(imgid, imgdim, funcid=0, img_type="gray8"):
             "reference": CannyEdgeAutoRef(),
             "check" : SimilarTensorFixp(0)
             }
+
+def gray8_histogr_test(imgid,imgdim,funcid,args):
+    return {"desc":f"Gray 8 histogram test {imgdim[0]}x{imgdim[1]}, funcid:{funcid} : args {args} ",
+            "funcid": funcid,
+            "useimg": [imgid],
+            "reference": Gray8Histogram(args),
+            "check" : SimilarTensorFixp()
+           }
+
+def gray8_histogr_equalize_test(imgid,imgdim,funcid):
+    return {"desc":f"Gray 8 histogram normalization test {imgdim[0]}x{imgdim[1]}, funcid:{funcid} ",
+            "funcid": funcid,
+            "useimg": [imgid],
+            "reference": Gray8HistogramEqualize(),
+            "check" : SimilarTensorFixp(1)
+           }

@@ -77,7 +77,7 @@ extern void arm_crop_rgb24(const arm_cv_image_rgb24_t* ImageIn,
                            const uint32_t bottom
                            );
 
-/**     
+/**
  * @brief      Resize BGR 8U3C image (float implementation)
  *
  * @param[in]  ImageIn   The input image
@@ -89,7 +89,7 @@ extern void arm_image_resize_bgr_8U3C_f32(const arm_cv_image_bgr_8U3C_t* ImageIn
                                                 uint8_t *p_img);
 
 
-/**     
+/**
  * @brief      Resize gray image (float implementation)
  *
  * @param[in]  ImageIn   The input image
@@ -100,18 +100,46 @@ extern void arm_image_resize_gray8_f32(const arm_cv_image_gray8_t* ImageIn,
                                              arm_cv_image_gray8_t* ImageOut,
                                              uint8_t *p_img);
 
-/**     
+/**
  * @brief      Resize BGR 8U3C image and convert to RGB24 (float implementation)
  *
  * @param[in]  ImageIn   The input image
  * @param      ImageOut  The output image
  * @param[in,out]  p_img   Temporary buffer
- * 
+ *
  */
 extern void arm_image_resize_bgr_8U3C_to_rgb24_f32(const arm_cv_image_bgr_8U3C_t* ImageIn,
-                                         arm_cv_image_rgb24_t* ImageOut,
-                                         uint8_t *p_img);
-                                         
+                                                         arm_cv_image_rgb24_t* ImageOut,
+                                                         uint8_t *p_img);
+
+
+/**
+ * @brief         Returns gray8 histogram equalization scratch size
+ *                needed internally for histogram and mapping table.
+ *
+ * @return        Scratch size array in bytes
+ */
+extern uint16_t arm_hist_equalize_gray8_get_scratch_size(void);
+
+
+
+/**
+ * @brief         Gray8 image histogram equalization
+ *
+ * @param[in]     pImageIn        The input image
+ * @param[out]    pImageOut       The output equalized image
+ * @param[in]     scratch         Internal storage
+ *
+ * @par  scratch buffer sizing:
+ *
+ * Size of temporary buffers:
+ *   - given by arm_hist_norm_gray8_get_scratch_size
+ */
+extern arm_cv_status arm_hist_equalize_gray8(const arm_cv_image_gray8_t * pImageIn,
+                                                   arm_cv_image_gray8_t * pImageOut, 
+                                                   uint32_t * scratch);
+
+
 #ifdef   __cplusplus
 }
 #endif

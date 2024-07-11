@@ -6,7 +6,8 @@
 #include <stdlib.h>
 
 extern "C" {
-    #include "cv/image_transforms.h"
+#include "cv/image_analysis.h"
+#include "cv/image_transforms.h"
 }
 
 
@@ -253,6 +254,44 @@ RESIZE_BGR_to_RGB(27,47,17);
 RESIZE_BGR_to_RGB(28,150,150);
 RESIZE_BGR_to_RGB(29,256,256);
 
+
+static arm_cv_status test_gray8_histogr_equalize(const unsigned char *inputs, unsigned char *&outputs,
+                                             uint32_t &total_bytes, uint32_t testid, long &cycles)
+{
+    long start, end;
+    uint32_t width, height;
+    int bufid = TENSOR_START + 3 + testid;
+
+    uint32_t nb_dims, dim0, dim1, dim2, dim3;
+    get_img_dims(inputs, bufid, &width, &height);
+
+    get_buffer_shape(inputs, bufid, &nb_dims, &dim0, &dim1, &dim2, &dim3);
+    std::vector<BufferDescription> desc = {BufferDescription(Shape(dim0, dim1), kIMG_GRAY8_TYPE)};
+
+    outputs = create_write_buffer(desc, total_bytes);
+
+    const uint8_t *src = Buffer<uint8_t>::read(inputs, bufid);
+    uint16_t *dst = Buffer<uint16_t>::write(outputs, 0);
+
+    const arm_cv_image_gray8_t input = {(uint16_t)width, (uint16_t)height, (uint8_t *)src};
+
+    arm_cv_image_gray8_t output = {(uint16_t)width, (uint16_t)height, (uint8_t *)dst};
+
+    uint16_t scratchSize = arm_hist_equalize_gray8_get_scratch_size();
+    uint32_t *scratch = (uint32_t *)malloc(scratchSize);
+
+    start = time_in_cycles();
+
+    arm_cv_status status = arm_hist_equalize_gray8(&input, &output, scratch);
+    end = time_in_cycles();
+
+    if (scratch)
+        free(scratch);
+
+    cycles = end - start;
+    return status;
+}
+
 void run_test(const unsigned char* inputs,
               const uint32_t testid,
               const uint32_t funcid,
@@ -375,7 +414,7 @@ void run_test(const unsigned char* inputs,
             test23(inputs,wbuf,total_bytes,testid,cycles);
             break;
 
-        
+
 
         case 24:
             // bgr 8U3C resize to rgb24
@@ -406,6 +445,11 @@ void run_test(const unsigned char* inputs,
         case 29:
             // bgr 8U3C resize to rgb24
             test29(inputs,wbuf,total_bytes,testid,cycles);
+            break;
+
+        case 30:
+            // gray8_histogr_equalize_test
+            test_gray8_histogr_equalize(inputs, wbuf, total_bytes, testid - 30, cycles);
             break;
     }
 
