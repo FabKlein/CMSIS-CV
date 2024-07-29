@@ -1,7 +1,7 @@
 /* ----------------------------------------------------------------------
  * Project:      CMSIS CV Library
- * Title:        arm_cv.h
- * Description:  General header from CMSIS-CV
+ * Title:        non_linear_filters.h
+ * Description:  Non-Linear 2D filters for CMSIS-CV
  *
  *
  * Target Processor: Cortex-M and Cortex-A cores
@@ -23,35 +23,30 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#ifndef ARM_CV_H_ 
-#define ARM_CV_H_ 
+#ifndef ARM_CV_NON_LINEAR_FILTER_H
+#define ARM_CV_NON_LINEAR_FILTER_H
+
 
 #include "arm_cv_types.h"
 
-/**
- * @defgroup colorTransform Color Transformations
- */
-#include "cv/color_transforms.h"
+#ifdef __cplusplus
+extern "C"
+{
+#endif
 
-/**
- * @defgroup imageTransform Image Transformations
- */
-#include "cv/image_transforms.h"
+    uint16_t arm_median_filter_gray8_get_scratch_size(uint8_t kernDim);
 
+    /**
+     * @brief      Gray8 median filter
+     *
+     * @param[in]  ImageIn   The input image
+     * @param      ImageOut  The output image
+     */
+    arm_cv_status arm_median_filter_gray8(const arm_cv_image_gray8_t *ImageIn, arm_cv_image_gray8_t *ImageOut,
+                                          uint8_t kern_dim, uint64_t *scratch);
 
-/**
- * @defgroup linearFilter Linear Filters
- */
-#include "cv/linear_filters.h"
+#ifdef __cplusplus
+}
+#endif
 
-/**
- * @defgroup featureDetection Feature Detection
- */
-#include "cv/feature_detection.h"
-
-/**
- * @defgroup non-linearFilter Linear Filters
- */
-#include "cv/non_linear_filters.h"
-
-#endif 
+#endif

@@ -57,7 +57,7 @@ allSuites = [
            [yuv420_to_rgb_test(imgid,imgdim,funcid=4) for imgid,imgdim in enumerate(STANDARD_YUV_IMG_SIZES)] +
            [rgb_to_gray_test(imgid+len(STANDARD_YUV_IMG_SIZES)+len(STANDARD_RGB_IMG_SIZES)+len(STANDARD_GRAY_IMG_SIZES),imgdim,funcid=5) for imgid,imgdim in enumerate(STANDARD_RGB_IMG_SIZES)]
            )
-           
+
     },
     {
         "name" : "Image Transforms",
@@ -104,7 +104,7 @@ allSuites = [
            bgr8U3C_resize_to_rgb_test((128,128),28,150,150),
            bgr8U3C_resize_to_rgb_test((128,128),29,256,256),
           ]
-        
+
     },
     {
         "name" : "Feature Detection",
@@ -175,6 +175,34 @@ allSuites = [
            [canny_sobel_test_autoref(imgid+5+8*len(STANDARD_IMG_SIZES), imgdim) for imgid,imgdim in enumerate(STANDARD_IMG_SIZES)]+
            [canny_sobel_test_autoref(imgid+5+9*len(STANDARD_IMG_SIZES), imgdim) for imgid,imgdim in enumerate(STANDARD_IMG_SIZES)]+
            [canny_sobel_test_autoref(imgid+5+10*len(STANDARD_IMG_SIZES), imgdim) for imgid,imgdim in enumerate(STANDARD_IMG_SIZES)]
+    },
+    {
+        "name" : "Non-Linear Filtering",
+        "define": "TESTGROUP4",
+        "inputs": [
+            #ImageGen(STANDARD_GRAY_IMG_SIZES,
+            #       format=Format.GRAY8,
+            #       path="Patterns/Mandrill.tiff"),
+                ImageGen([(64,64)],
+                   format=Format.GRAY8,
+                   path="Patterns/Mandrill.tiff"),
+                ImageGen([(500,500)],
+                   format=Format.GRAY8,
+                   path="Patterns/Peppers.tiff"),
+                ImageGen([(250,250)],
+                   format=Format.GRAY8,
+                   path="Patterns/House2.tiff"),
+                ImageGen([(320,240)],
+                   format=Format.GRAY8,
+                   path="Patterns/Girl3.tiff"),
+                   ],
+        "tests":
+          (
+          [ gray8_medfilter_test(0 + 0, [64,64], 0, 3)] +
+          [ gray8_medfilter_test(0 + 1, [500,500], 1, 5)] +
+          [ gray8_medfilter_test(0 + 2, [250,250], 2, 7)] +
+          [ gray8_medfilter_test(0 + 3, [320,240], 0, 3)]
+          )
     },
 ]
 

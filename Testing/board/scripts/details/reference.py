@@ -1,5 +1,6 @@
 import cv2 as cv
 from ..test_utils import *
+from scipy.ndimage import median_filter
 
 #############################
 # Generation of references
@@ -123,8 +124,8 @@ class YUV420ToRGB:
 
 class CropGray8:
     def __init__(self,width=None,height=None):
-        self._width = width # pair 
-        self._height = height # pair 
+        self._width = width # pair
+        self._height = height # pair
 
     def __call__(self,args,group_id,test_id,srcs):
         filtered = []
@@ -147,8 +148,8 @@ class CropGray8:
 
 class CropRGB:
     def __init__(self,width=None,height=None):
-        self._width = width # pair 
-        self._height = height # pair 
+        self._width = width # pair
+        self._height = height # pair
 
     def __call__(self,args,group_id,test_id,srcs):
         filtered = []
@@ -175,7 +176,7 @@ class CropRGB:
 def _Himax_resize(input,output_w,output_h):
     tmp = np.zeros((2,output_w),dtype=np.uint8)
     result = np.zeros((output_h,output_w),dtype=np.uint8)
-    input_h,input_w = input.shape 
+    input_h,input_w = input.shape
     w_scale = (input_w - 1) / (output_w - 1)
     h_scale = (input_h - 1) / (output_h - 1)
 
@@ -214,8 +215,8 @@ def _Himax_resize(input,output_w,output_h):
 # Resizing using Himax algorithm
 class HimaxResizeGray8:
     def __init__(self,w,h):
-        self._dst_width = w  
-        self._dst_height = h  
+        self._dst_width = w
+        self._dst_height = h
 
     def __call__(self,args,group_id,test_id,srcs):
         filtered = []
@@ -238,8 +239,8 @@ class HimaxResizeGray8:
 
 class ResizeGray8:
     def __init__(self,w,h):
-        self._dst_width = w  
-        self._dst_height = h  
+        self._dst_width = w
+        self._dst_height = h
 
     def __call__(self,args,group_id,test_id,srcs):
         filtered = []
@@ -262,8 +263,8 @@ class ResizeGray8:
 
 class HimaxResizeBGR_8U3C:
     def __init__(self,w,h):
-        self._dst_width = w  
-        self._dst_height = h  
+        self._dst_width = w
+        self._dst_height = h
 
     def __call__(self,args,group_id,test_id,srcs):
         filtered = []
@@ -288,8 +289,8 @@ class HimaxResizeBGR_8U3C:
 
 class ResizeBGR_8U3C:
     def __init__(self,w,h):
-        self._dst_width = w  
-        self._dst_height = h  
+        self._dst_width = w
+        self._dst_height = h
 
     def __call__(self,args,group_id,test_id,srcs):
         filtered = []
@@ -314,8 +315,8 @@ class ResizeBGR_8U3C:
 
 class HimaxResizeBGR_8U3C_to_RGB24:
     def __init__(self,w,h):
-        self._dst_width = w  
-        self._dst_height = h  
+        self._dst_width = w
+        self._dst_height = h
 
     def __call__(self,args,group_id,test_id,srcs):
         filtered = []
@@ -342,7 +343,7 @@ class HimaxResizeBGR_8U3C_to_RGB24:
 
     def nb_references(self,srcs):
         return len(srcs)
-    
+
 class GaussianFilter:
     def __call__(self,args,group_id,test_id,srcs):
         filtered = []
@@ -354,7 +355,7 @@ class GaussianFilter:
             blur = cv.filter2D(i.tensor, -1, kernel,cv.BORDER_REPLICATE)
             # Pack the image in an AlgoImage and add it to the reference patterns
             # If we get the blur as it is, it will be recorded as an .npy file
-            # It would be simpler with a gray8 as tiff image 
+            # It would be simpler with a gray8 as tiff image
             # So we need to convert back to Pillow
             pil = PIL.Image.fromarray(blur)
             filtered.append(AlgoImage(pil))
@@ -378,7 +379,7 @@ class CannyEdge:
             canny = cv.Canny(i.tensor, 95,78)
             # Pack the image in an AlgoImage and add it to the reference patterns
             # If we get the blur as it is, it will be recorded as an .npy file
-            # It would be simpler with a gray8 as tiff image 
+            # It would be simpler with a gray8 as tiff image
             # So we need to convert back to Pillow
             pil = PIL.Image.fromarray(canny)
             procesed.append(AlgoImage(pil))
@@ -389,7 +390,7 @@ class CannyEdge:
 
     def nb_references(self,srcs):
         return len(srcs)
-    
+
 class CannyEdgeAutoRef:
 
     def __call__(self,args,group_id,test_id,srcs):
@@ -399,6 +400,28 @@ class CannyEdgeAutoRef:
 
         # Record the filtered images
         for image_id,img in enumerate(procesed):
+            record_reference_img(args,group_id,test_id,image_id,img)
+
+    def nb_references(self,srcs):
+        return len(srcs)
+
+
+class Gray8MedianFilter:
+    def __init__(self,k):
+        self._kernel_dim = k
+
+    def __call__(self,args,group_id,test_id,srcs):
+        filtered = []
+        for i in srcs:
+
+            #blured = cv.medianBlur(i.tensor,  self._kernel_dim)
+            #blured = median_filter(i.tensor, size=self._kernel_dim, mode='nearest', cval=0)
+            blured = median_filter(i.tensor, size=self._kernel_dim, mode='constant', cval=0)
+
+            filtered.append(AlgoImage(blured.astype(np.uint8)))
+
+        # Record the filtered images
+        for image_id,img in enumerate(filtered):
             record_reference_img(args,group_id,test_id,image_id,img)
 
     def nb_references(self,srcs):

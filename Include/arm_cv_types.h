@@ -186,6 +186,13 @@ typedef struct _arm_cv_image_grad_q15 {
 
 
 
+typedef enum
+{
+    ARM_CV_SUCCESS                 =  0,        /**< No error */
+    ARM_CV_ARGUMENT_ERROR          = -1,        /**< One or more arguments are incorrect */
+    ARM_CV_LENGTH_ERROR            = -2,        /**< Length of data buffer is incorrect */
+} arm_cv_status;
+
 #ifdef   __cplusplus
 }
 #endif

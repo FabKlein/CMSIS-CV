@@ -113,3 +113,10 @@ def canny_sobel_test_autoref(imgid, imgdim, funcid=0, img_type="gray8"):
             "reference": CannyEdgeAutoRef(),
             "check" : SimilarTensorFixp(0)
             }
+def gray8_medfilter_test(imgid,imgdim,funcid, k):
+    return {"desc":f"Gray 8 median filter test {imgdim[0]}x{imgdim[1]}, funcid:{funcid} : kernel dim {k}",
+            "funcid": funcid,
+            "useimg": [imgid],
+            "reference": Gray8MedianFilter(k),
+            "check" : SimilarTensorFixp(0)
+           }
